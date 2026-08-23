@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
-import { ScoreboardState, SportType, CustomSoundItem, SoundEventOverrides } from '../types';
+import { 
+  ScoreboardState, SportType, CustomSoundItem, SoundEventOverrides, 
+  SportSoundTemplates, SportSoundPad 
+} from '../types';
 import { sounds } from '../utils/audio';
 import { hardware } from '../utils/hardwareManager';
+import { DEFAULT_SPORT_TEMPLATES, BUILTIN_SOUNDS_CATALOG } from '../utils/sportSoundTemplates';
 import { 
   Play, Pause, RotateCcw, Volume2, Plus, Minus, ArrowLeftRight, 
   Flame, Award, Music, Clock, Timer, Check, Edit2, Sparkles,
@@ -24,8 +28,9 @@ interface Props {
   onSetSport: (sport: SportType) => void;
   onOpenKeyConfig?: () => void;
   customSounds?: CustomSoundItem[];
+  sportTemplates?: SportSoundTemplates;
   soundOverrides?: SoundEventOverrides;
-  onOpenCustomSoundManager?: () => void;
+  onOpenCustomSoundManager?: (sport?: SportType) => void;
 }
 
 export const ScoreboardPanel: React.FC<Props> = ({
@@ -42,6 +47,7 @@ export const ScoreboardPanel: React.FC<Props> = ({
   onSetSport,
   onOpenKeyConfig,
   customSounds = [],
+  sportTemplates,
   soundOverrides,
   onOpenCustomSoundManager,
 }) => {
@@ -712,12 +718,22 @@ export const ScoreboardPanel: React.FC<Props> = ({
             >
               🤾 Handball
             </button>
+            <button
+              onClick={() => setActiveSoundTab('training')}
+              className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap ${
+                activeSoundTab === 'training'
+                  ? 'bg-purple-600 text-white shadow'
+                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              ⏱️ Entrenamiento
+            </button>
 
             {onOpenCustomSoundManager && (
               <button
-                onClick={onOpenCustomSoundManager}
+                onClick={() => onOpenCustomSoundManager(activeSoundTab === 'current' ? state.sport : (activeSoundTab === 'custom' ? undefined : (activeSoundTab as SportType)))}
                 className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1 border border-slate-700 whitespace-nowrap"
-                title="Administrar, cargar MP3 y grabar audios propios"
+                title="Administrar, configurar botoneras y audios por deporte"
               >
                 <Sliders className="w-3 h-3 text-purple-400" />
                 <span className="hidden sm:inline">Administrar Sonidos</span>
@@ -736,7 +752,7 @@ export const ScoreboardPanel: React.FC<Props> = ({
               </span>
               {onOpenCustomSoundManager && (
                 <button
-                  onClick={onOpenCustomSoundManager}
+                  onClick={() => onOpenCustomSoundManager()}
                   className="bg-pink-600 hover:bg-pink-500 text-white font-stadium font-bold text-xs px-3 py-1 rounded-lg flex items-center gap-1.5 shadow"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -750,7 +766,7 @@ export const ScoreboardPanel: React.FC<Props> = ({
                 <p className="text-xs text-slate-400">No tienes sonidos personalizados cargados todavía.</p>
                 {onOpenCustomSoundManager && (
                   <button
-                    onClick={onOpenCustomSoundManager}
+                    onClick={() => onOpenCustomSoundManager()}
                     className="bg-purple-600 hover:bg-purple-500 text-white font-stadium font-bold text-xs px-4 py-2 rounded-xl shadow"
                   >
                     Abrir Administrador de Sonidos
@@ -809,236 +825,122 @@ export const ScoreboardPanel: React.FC<Props> = ({
           </div>
         )}
 
-        {/* 1. PALETA DE FÚTBOL TRADICIONAL */}
-        {effectiveSoundCategory === 'soccer' && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-            <button
-              onClick={() => handlePlaySound('goal', 'CMD:SND:GOAL', () => sounds.playGoalHorn())}
-              className="bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-emerald-500/50"
-            >
-              <span className="text-base">⚽💥</span>
-              <span>¡GOL! BOCINA + OVACIÓN</span>
-            </button>
+        {/* TAB DE BOTONERAS CONFIGURABLES POR DEPORTE */}
+        {activeSoundTab !== 'custom' && (() => {
+          const targetSport: SportType = activeSoundTab === 'current' 
+            ? (state.sport === 'custom' ? 'training' : state.sport)
+            : (activeSoundTab as SportType);
+          
+          const template = sportTemplates?.[targetSport] || DEFAULT_SPORT_TEMPLATES[targetSport] || DEFAULT_SPORT_TEMPLATES.basketball;
 
-            <button
-              onClick={() => handlePlaySound('ole', 'CMD:SND:OLE', () => sounds.playOleChant())}
-              className="bg-amber-700 hover:bg-amber-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-amber-500/50"
-            >
-              <span className="text-base">🎺</span>
-              <span>CÁNTICO "¡OLÉ, OLÉ!"</span>
-            </button>
+          return (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/60 p-2 rounded-xl border border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-300 font-bold flex items-center gap-1.5 font-stadium">
+                    <span>{template.icon}</span>
+                    <span>Botonera de {template.displayName}</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono-code bg-slate-800/80 px-2 py-0.5 rounded">
+                    {template.pads.length} pads configurados
+                  </span>
+                </div>
+                {onOpenCustomSoundManager && (
+                  <button
+                    onClick={() => onOpenCustomSoundManager(targetSport)}
+                    className="bg-purple-600 hover:bg-purple-500 text-white font-stadium font-bold text-xs px-3 py-1 rounded-lg flex items-center gap-1.5 shadow transition"
+                    title={`Editar y personalizar los sonidos de ${template.displayName}`}
+                  >
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>⚙️ Configurar Botonera de {template.displayName}</span>
+                  </button>
+                )}
+              </div>
 
-            <button
-              onClick={() => handlePlaySound('whistle', 'CMD:SND:WHISTLE', () => sounds.playRefereeWhistle())}
-              className="bg-blue-700 hover:bg-blue-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-blue-500/50"
-            >
-              <span className="text-base">📢</span>
-              <span>SILBATO ÁRBITRO</span>
-            </button>
+              {template.pads.length === 0 ? (
+                <div className="text-center py-6 bg-slate-950/40 rounded-xl border border-slate-800 p-4 space-y-2">
+                  <p className="text-xs text-slate-400">No hay pads configurados para este deporte.</p>
+                  {onOpenCustomSoundManager && (
+                    <button
+                      onClick={() => onOpenCustomSoundManager(targetSport)}
+                      className="bg-purple-600 hover:bg-purple-500 text-white font-stadium font-bold text-xs px-4 py-2 rounded-xl shadow"
+                    >
+                      Configurar Sonidos de {template.displayName}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                  {template.pads.map((pad) => {
+                    const isPlaying = playingCustomId === pad.id;
+                    const padBg = pad.color || '#4f46e5';
+                    
+                    return (
+                      <button
+                        key={pad.id}
+                        onClick={() => {
+                          if (isPlaying) {
+                            sounds.stopAllSounds();
+                            setPlayingCustomId(null);
+                            return;
+                          }
 
-            <button
-              onClick={() => handlePlaySound('double_whistle', 'CMD:SND:DOUBLE_WHISTLE', () => sounds.playDoubleWhistle())}
-              className="bg-indigo-700 hover:bg-indigo-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-indigo-500/50"
-            >
-              <span className="text-base">⚠️📢</span>
-              <span>DOBLE SILBATO (FALTA)</span>
-            </button>
+                          sounds.stopAllSounds();
+                          setPlayingCustomId(pad.id);
 
-            <button
-              onClick={() => handlePlaySound('soccer_end', 'CMD:SND:SOCCER_END', () => sounds.playSoccerMatchWhistle())}
-              className="bg-rose-700 hover:bg-rose-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-rose-500/50"
-            >
-              <span className="text-base">🏁</span>
-              <span>PITIDO FINAL 3 TOQUES</span>
-            </button>
+                          if (pad.soundType === 'builtin' && pad.builtinKey) {
+                            const item = BUILTIN_SOUNDS_CATALOG.find((b) => b.key === pad.builtinKey);
+                            if (item) {
+                              item.play(sounds);
+                            } else {
+                              sounds.playHorn(1200);
+                            }
+                            setTimeout(() => setPlayingCustomId((curr) => curr === pad.id ? null : curr), 1200);
+                          } else if (pad.soundType === 'custom' && pad.customSoundId) {
+                            const custom = customSounds.find((c) => c.id === pad.customSoundId);
+                            if (custom) {
+                              sounds.playCustomSound(
+                                custom.id,
+                                custom.audioData,
+                                pad.volume ?? custom.volume ?? 1.0,
+                                false,
+                                () => setPlayingCustomId((curr) => curr === pad.id ? null : curr)
+                              );
+                            } else {
+                              sounds.playHorn(800);
+                              setPlayingCustomId(null);
+                            }
+                          }
 
-            <button
-              onClick={() => handlePlaySound('card_alarm', 'CMD:SND:CARD', () => sounds.playCardAlarm())}
-              className="bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-amber-400/50"
-            >
-              <span className="text-base">🟨🟥</span>
-              <span>ALARMA TARJETA</span>
-            </button>
-          </div>
-        )}
-
-        {/* 2. PALETA DE BÁSQUETBOL */}
-        {effectiveSoundCategory === 'basketball' && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
-            <button
-              onClick={() => handlePlaySound('horn', 'CMD:SND:HORN', () => sounds.playHorn(1800))}
-              className="bg-rose-700 hover:bg-rose-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-rose-500/50"
-            >
-              <Volume2 className="w-5 h-5 text-rose-200 animate-pulse" />
-              <span>CHICHARRA FIN</span>
-            </button>
-
-            <button
-              onClick={() => handlePlaySound('shot_clock_warn', 'CMD:SND:SHOT_WARN', () => sounds.playShotClockWarning(5))}
-              className="bg-red-700 hover:bg-red-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-red-500/60 ring-2 ring-red-500/30"
-            >
-              <span className="text-base animate-bounce">🚨</span>
-              <span>ÚLTIMOS 5s BEEP</span>
-            </button>
-
-            <button
-              onClick={() => handlePlaySound('shot_clock_horn', 'CMD:SND:SHOT_EXPIRED', () => sounds.playShotClockViolation())}
-              className="bg-orange-700 hover:bg-orange-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-orange-500/50"
-            >
-              <span className="text-base">💥</span>
-              <span>BOCINA 24s VIOLACIÓN</span>
-            </button>
-
-            <button
-              onClick={() => handlePlaySound('charge', 'CMD:SND:CHARGE', () => sounds.playChargeFanfare())}
-              className="bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-amber-400/50"
-            >
-              <span className="text-base">🎺</span>
-              <span>CHARGE! (A LA CARGA)</span>
-            </button>
-
-            <button
-              onClick={() => handlePlaySound('defense', 'CMD:SND:DEFENSE', () => sounds.playDefenseOrgan())}
-              className="bg-blue-700 hover:bg-blue-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-blue-500/50"
-            >
-              <span className="text-base">🎹</span>
-              <span>ÓRGANO DEFENSE</span>
-            </button>
-
-            <button
-              onClick={() => handlePlaySound('triple', 'CMD:SND:TRIPLE', () => sounds.playTripleBasket())}
-              className="bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-emerald-500/50"
-            >
-              <span className="text-base">🔥🏀</span>
-              <span>¡TRIPLAZO! NET SWISH</span>
-            </button>
-
-            <button
-              onClick={() => handlePlaySound('whistle', 'CMD:SND:WHISTLE', () => sounds.playRefereeWhistle())}
-              className="bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-slate-500/50"
-            >
-              <span className="text-base">📢</span>
-              <span>SILBATO ÁRBITRO</span>
-            </button>
-
-            <button
-              onClick={() => handlePlaySound('timeout', 'CMD:SND:TIMEOUT', () => sounds.playTimeoutHorn())}
-              className="bg-purple-700 hover:bg-purple-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-purple-500/50"
-            >
-              <span className="text-base">⏸️</span>
-              <span>TIEMPO MUERTO</span>
-            </button>
-          </div>
-        )}
-
-        {/* 3. PALETA DE FUTSAL */}
-        {effectiveSoundCategory === 'futsal' && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-            <button
-              onClick={() => handlePlaySound('goal', 'CMD:SND:GOAL', () => sounds.playGoalHorn())}
-              className="bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-emerald-500/50"
-            >
-              <span className="text-base">⚽🚨</span>
-              <span>¡GOL FUTSAL! BOCINA</span>
-            </button>
-            <button
-              onClick={() => handlePlaySound('doble_penal', 'CMD:SND:DOBLE_PENAL', () => sounds.playDoblePenal())}
-              className="bg-rose-700 hover:bg-rose-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-rose-500/50 ring-2 ring-rose-500/40"
-            >
-              <span className="text-base">⚠️🎯</span>
-              <span>6ª FALTA (10 METROS)</span>
-            </button>
-            <button
-              onClick={() => handlePlaySound('card_alarm', 'CMD:SND:CARD', () => sounds.playCardAlarm())}
-              className="bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-amber-400/50"
-            >
-              <span className="text-base">🟨🟥</span>
-              <span>EXPULSIÓN 2 MIN</span>
-            </button>
-            <button
-              onClick={() => handlePlaySound('whistle', 'CMD:SND:WHISTLE', () => sounds.playRefereeWhistle())}
-              className="bg-blue-700 hover:bg-blue-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-blue-500/50"
-            >
-              <span className="text-base">📢</span>
-              <span>SILBATO</span>
-            </button>
-            <button
-              onClick={() => handlePlaySound('ole', 'CMD:SND:OLE', () => sounds.playOleChant())}
-              className="bg-amber-700 hover:bg-amber-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-amber-500/50"
-            >
-              <span className="text-base">🎺</span>
-              <span>CÁNTICO OLÉ</span>
-            </button>
-          </div>
-        )}
-
-        {/* 4. PALETA DE VOLEIBOL */}
-        {effectiveSoundCategory === 'volleyball' && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-            <button
-              onClick={() => handlePlaySound('set_point', 'CMD:SND:SET_POINT', () => sounds.playSetPoint())}
-              className="bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-blue-400/50"
-            >
-              <span className="text-base">🏆🏐</span>
-              <span>¡SET POINT! FANFARRIA</span>
-            </button>
-            <button
-              onClick={() => handlePlaySound('spike_ace', 'CMD:SND:SPIKE', () => sounds.playSpikeAce())}
-              className="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-emerald-400/50"
-            >
-              <span className="text-base">💥⚡</span>
-              <span>REMATE / ACE GANADOR</span>
-            </button>
-            <button
-              onClick={() => handlePlaySound('serve_whistle', 'CMD:SND:SERVE', () => sounds.playServeWhistle())}
-              className="bg-cyan-700 hover:bg-cyan-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-cyan-500/50"
-            >
-              <span className="text-base">📢</span>
-              <span>ORDEN DE SAQUE (8s)</span>
-            </button>
-            <button
-              onClick={() => handlePlaySound('rotation_beep', 'CMD:SND:ROTATION', () => sounds.playRotationBeep())}
-              className="bg-indigo-700 hover:bg-indigo-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-indigo-500/50"
-            >
-              <span className="text-base">🔄</span>
-              <span>ROTACIÓN / CAMBIO</span>
-            </button>
-          </div>
-        )}
-
-        {/* 5. PALETA DE HANDBALL */}
-        {effectiveSoundCategory === 'handball' && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-            <button
-              onClick={() => handlePlaySound('handball_goal', 'CMD:SND:HB_GOAL', () => sounds.playHandballGoal())}
-              className="bg-purple-700 hover:bg-purple-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-purple-500/50"
-            >
-              <span className="text-base">🤾💥</span>
-              <span>¡GOLAZO HANDBALL!</span>
-            </button>
-            <button
-              onClick={() => handlePlaySound('two_min_suspension', 'CMD:SND:HB_2MIN', () => sounds.playTwoMinSuspension())}
-              className="bg-rose-700 hover:bg-rose-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-rose-500/50"
-            >
-              <span className="text-base">⏱️✌️</span>
-              <span>EXCLUSIÓN 2 MINUTOS</span>
-            </button>
-            <button
-              onClick={() => handlePlaySound('passive_play', 'CMD:SND:HB_PASSIVE', () => sounds.playPassivePlayWarning())}
-              className="bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-amber-400/50"
-            >
-              <span className="text-base">⚠️✋</span>
-              <span>JUEGO PASIVO</span>
-            </button>
-            <button
-              onClick={() => handlePlaySound('whistle', 'CMD:SND:WHISTLE', () => sounds.playRefereeWhistle())}
-              className="bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border border-slate-500/50"
-            >
-              <span className="text-base">📢</span>
-              <span>SILBATO</span>
-            </button>
-          </div>
-        )}
+                          if (pad.arduinoCmd) {
+                            hardware.sendCommand(pad.arduinoCmd);
+                          }
+                        }}
+                        className={`font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border text-white active:scale-95 relative ${
+                          isPlaying
+                            ? 'border-white ring-2 ring-white/60 animate-pulse'
+                            : 'hover:opacity-90 border-slate-700/60'
+                        }`}
+                        style={{
+                          backgroundColor: isPlaying ? '#e11d48' : padBg,
+                        }}
+                        title={`Reproducir ${pad.name} ${pad.arduinoCmd ? `(${pad.arduinoCmd})` : ''}`}
+                      >
+                        <span className="text-lg">{isPlaying ? '⏹️' : (pad.icon || '🎵')}</span>
+                        <span className="truncate max-w-full text-center">{pad.name}</span>
+                        {pad.soundType === 'custom' && (
+                          <span className="text-[9px] bg-black/30 px-1 rounded font-mono-code text-pink-200">
+                            Audio Propio
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </section>
 
       {/* RELOJ DE POSESIÓN (SHOT CLOCK 24s / 14s) CON ALERTA DE ÚLTIMOS 5s */}

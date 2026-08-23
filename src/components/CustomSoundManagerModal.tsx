@@ -1,5 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CustomSoundItem, SoundEventOverrides, SoundCategory } from '../types';
+import { 
+  SportType, CustomSoundItem, SoundEventOverrides, SoundCategory, 
+  SportSoundPad, SportSoundTemplate, SportSoundTemplates, BuiltinSoundKey 
+} from '../types';
 import { sounds } from '../utils/audio';
 import { 
   readAudioFile, 
@@ -8,60 +11,92 @@ import {
   importSoundPack,
   getDefaultPresetSounds 
 } from '../utils/customSoundManager';
+import { 
+  BUILTIN_SOUNDS_CATALOG, 
+  DEFAULT_SPORT_TEMPLATES, 
+  resetSportTemplate 
+} from '../utils/sportSoundTemplates';
 import { hardware } from '../utils/hardwareManager';
 import { 
-  X, Upload, Mic, Music, Volume2, VolumeX, Play, Square, RotateCcw, 
-  Trash2, Download, Plus, Check, Settings2, Sparkles, AlertCircle, 
-  HelpCircle, Sliders, Radio, Zap, RefreshCw, FolderPlus
+  X, Upload, Mic, Music, Volume2, Play, Square, 
+  Trash2, Download, Plus, Check, Settings2, 
+  Sliders, RefreshCw, FolderPlus, ArrowLeft, ArrowRight, Edit3, ShieldAlert
 } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  initialSport?: SportType;
   customSounds: CustomSoundItem[];
   onSaveCustomSounds: (sounds: CustomSoundItem[]) => void;
+  sportTemplates: SportSoundTemplates;
+  onSaveSportTemplates: (templates: SportSoundTemplates) => void;
   soundOverrides: SoundEventOverrides;
   onSaveSoundOverrides: (overrides: SoundEventOverrides) => void;
-  soundEnabled: boolean;
+  soundEnabled?: boolean;
 }
 
-const CATEGORIES: { id: SoundCategory; name: string; icon: string }[] = [
-  { id: 'horn', name: 'Bocinas & Chicharras', icon: '🚨' },
-  { id: 'goal', name: 'Goles & Anotaciones', icon: '⚽' },
-  { id: 'whistle', name: 'Silbatos & Árbitro', icon: '📢' },
-  { id: 'cheer', name: 'Hinchada & Aplausos', icon: '👏' },
-  { id: 'fanfare', name: 'Fanfarrias & Música', icon: '🎺' },
-  { id: 'announcement', name: 'Locución & Avisos', icon: '🎙️' },
-  { id: 'custom', name: 'Personalizados', icon: '✨' },
+const SPORTS_LIST: { id: SportType; name: string; icon: string }[] = [
+  { id: 'basketball', name: 'Básquetbol', icon: '🏀' },
+  { id: 'soccer', name: 'Fútbol', icon: '⚽' },
+  { id: 'futsal', name: 'Futsal', icon: '⚽' },
+  { id: 'volleyball', name: 'Vóleibol', icon: '🏐' },
+  { id: 'handball', name: 'Handball', icon: '🤾' },
+  { id: 'custom', name: 'Entrenamiento / Gimnasio', icon: '⏱️' },
 ];
 
 const COLOR_PRESETS = [
   '#ef4444', // red
+  '#f97316', // orange
   '#f59e0b', // amber
   '#10b981', // emerald
   '#06b6d4', // cyan
   '#3b82f6', // blue
+  '#6366f1', // indigo
   '#8b5cf6', // purple
   '#ec4899', // pink
   '#64748b', // slate
 ];
 
-const EMOJI_PRESETS = ['🚨', '⚽', '🏀', '🏐', '🤾', '📢', '👏', '🎺', '🔔', '⏸️', '💥', '🔥', '🏆', '🎵', '🎙️', '⚡'];
+const EMOJI_PRESETS = ['🚨', '🏀', '⚽', '🏐', '🤾', '⏱️', '📢', '👏', '🎺', '🔔', '⏸️', '💥', '🔥', '🏆', '🎵', '🎙️', '⚡', '🛡️', '🎉', '🏁', '👥', '🟥', '🟨', '🛑', '🔄'];
 
 export const CustomSoundManagerModal: React.FC<Props> = ({
   isOpen,
   onClose,
-  customSounds,
+  initialSport = 'basketball',
+  customSounds = [],
   onSaveCustomSounds,
+  sportTemplates,
+  onSaveSportTemplates,
   soundOverrides,
   onSaveSoundOverrides,
-  soundEnabled
 }) => {
-  const [activeTab, setActiveTab] = useState<'board' | 'upload' | 'record' | 'overrides' | 'pack'>('board');
-  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
+  // Pestañas principales
+  const [activeTab, setActiveTab] = useState<'sports' | 'custom_library' | 'upload' | 'record' | 'overrides' | 'pack'>('sports');
   
+  // Deporte seleccionado para configurar plantilla
+  const [selectedSport, setSelectedSport] = useState<SportType>(initialSport);
+
+  // Sincronizar deporte inicial al abrir
+  useEffect(() => {
+    if (initialSport) {
+      setSelectedSport(initialSport);
+    }
+  }, [initialSport, isOpen]);
+
   // Estado de reproducción activa
   const [playingId, setPlayingId] = useState<string | null>(null);
+
+  // Modal / Formulario para añadir o editar un Pad en el deporte seleccionado
+  const [isPadEditorOpen, setIsPadEditorOpen] = useState(false);
+  const [editingPadId, setEditingPadId] = useState<string | null>(null);
+  const [padFormName, setPadFormName] = useState('');
+  const [padFormType, setPadFormType] = useState<'builtin' | 'custom'>('builtin');
+  const [padFormBuiltinKey, setPadFormBuiltinKey] = useState<BuiltinSoundKey>('playHorn');
+  const [padFormCustomId, setPadFormCustomId] = useState<string>('');
+  const [padFormIcon, setPadFormIcon] = useState('🚨');
+  const [padFormColor, setPadFormColor] = useState('#ef4444');
+  const [padFormArduinoCmd, setPadFormArduinoCmd] = useState('');
 
   // Subida de Archivos
   const [uploadFiles, setUploadFiles] = useState<CustomSoundItem[]>([]);
@@ -77,10 +112,11 @@ export const CustomSoundManagerModal: React.FC<Props> = ({
   const [recordedCategory, setRecordedCategory] = useState<SoundCategory>('announcement');
   const [recordedIcon, setRecordedIcon] = useState('🎙️');
   const [recordedColor, setRecordedColor] = useState('#ec4899');
+  const [addRecordToSport, setAddRecordToSport] = useState<boolean>(true);
   const recorderRef = useRef<VoiceRecorder | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Cleanup de reproducción al cerrar modal
+  // Limpiar reproducciones al desmontar o cerrar
   useEffect(() => {
     return () => {
       sounds.stopAllSounds();
@@ -89,54 +125,286 @@ export const CustomSoundManagerModal: React.FC<Props> = ({
 
   if (!isOpen) return null;
 
-  // Manejo de Reproducción
-  const handleTogglePlay = (sound: CustomSoundItem) => {
+  const currentTemplate: SportSoundTemplate = sportTemplates[selectedSport] || DEFAULT_SPORT_TEMPLATES[selectedSport];
+
+  // Helper para reproducir cualquier pad (sea sintetizado o custom)
+  const handlePlayPad = (pad: SportSoundPad) => {
+    if (playingId === pad.id) {
+      sounds.stopAllSounds();
+      setPlayingId(null);
+      return;
+    }
+
+    sounds.stopAllSounds();
+    setPlayingId(pad.id);
+
+    if (pad.soundType === 'builtin' && pad.builtinKey) {
+      const item = BUILTIN_SOUNDS_CATALOG.find((b) => b.key === pad.builtinKey);
+      if (item) {
+        item.play(sounds);
+      } else {
+        sounds.playHorn(1200);
+      }
+      setTimeout(() => setPlayingId(null), 1500);
+    } else if (pad.soundType === 'custom' && pad.customSoundId) {
+      const custom = customSounds.find((c) => c.id === pad.customSoundId);
+      if (custom) {
+        sounds.playCustomSound(
+          custom.id,
+          custom.audioData,
+          pad.volume ?? custom.volume ?? 1.0,
+          false,
+          () => setPlayingId(null)
+        );
+      } else {
+        sounds.playHorn(800);
+        setPlayingId(null);
+      }
+    }
+
+    if (pad.arduinoCmd) {
+      hardware.sendCommand(pad.arduinoCmd);
+    }
+  };
+
+  // Reproducir un sonido de la librería de usuario
+  const handleTogglePlayCustom = (sound: CustomSoundItem) => {
     if (playingId === sound.id) {
       sounds.stopCustomSound(sound.id);
       setPlayingId(null);
     } else {
       sounds.stopAllSounds();
       setPlayingId(sound.id);
-      
       sounds.playCustomSound(
-        sound.id, 
-        sound.audioData, 
-        sound.volume || 1.0, 
+        sound.id,
+        sound.audioData,
+        sound.volume || 1.0,
         sound.loop || false,
-        () => {
-          setPlayingId((curr) => (curr === sound.id ? null : curr));
-        }
+        () => setPlayingId(null)
       );
-
-      // Enviar comando serie a Arduino si existe
       if (sound.arduinoCmd) {
         hardware.sendCommand(sound.arduinoCmd);
-      } else {
-        hardware.sendCommand(`CMD:SND:CUSTOM:${sound.name.substring(0, 10).toUpperCase()}`);
       }
     }
   };
 
-  const handleStopAll = () => {
-    sounds.stopAllSounds();
-    setPlayingId(null);
+  // Abrir editor para un pad nuevo
+  const handleOpenNewPad = () => {
+    setEditingPadId(null);
+    setPadFormName('Bocina / Efecto');
+    setPadFormType('builtin');
+    setPadFormBuiltinKey('playHorn');
+    setPadFormCustomId(customSounds.length > 0 ? customSounds[0].id : '');
+    setPadFormIcon('🚨');
+    setPadFormColor('#ef4444');
+    setPadFormArduinoCmd('CMD:HORN');
+    setIsPadEditorOpen(true);
   };
 
-  // Eliminar Sonido
-  const handleDeleteSound = (id: string) => {
-    sounds.removeCustomSoundCache(id);
-    if (playingId === id) setPlayingId(null);
-    const updated = customSounds.filter((s) => s.id !== id);
-    onSaveCustomSounds(updated);
+  // Abrir editor para modificar un pad existente
+  const handleOpenEditPad = (pad: SportSoundPad) => {
+    setEditingPadId(pad.id);
+    setPadFormName(pad.name);
+    setPadFormType(pad.soundType);
+    setPadFormBuiltinKey(pad.builtinKey || 'playHorn');
+    setPadFormCustomId(pad.customSoundId || (customSounds.length > 0 ? customSounds[0].id : ''));
+    setPadFormIcon(pad.icon || '🎵');
+    setPadFormColor(pad.color || '#3b82f6');
+    setPadFormArduinoCmd(pad.arduinoCmd || '');
+    setIsPadEditorOpen(true);
   };
 
-  // Actualizar Volumen o Atributos
-  const handleUpdateSound = (id: string, partial: Partial<CustomSoundItem>) => {
-    const updated = customSounds.map((s) => (s.id === id ? { ...s, ...partial } : s));
-    onSaveCustomSounds(updated);
+  // Guardar Pad (nuevo o editado) en el deporte actual
+  const handleSavePad = () => {
+    if (!padFormName.trim()) return;
+
+    const updatedPads = [...currentTemplate.pads];
+
+    if (editingPadId) {
+      // Modificar existente
+      const idx = updatedPads.findIndex((p) => p.id === editingPadId);
+      if (idx !== -1) {
+        updatedPads[idx] = {
+          ...updatedPads[idx],
+          name: padFormName.trim(),
+          soundType: padFormType,
+          builtinKey: padFormType === 'builtin' ? padFormBuiltinKey : undefined,
+          customSoundId: padFormType === 'custom' ? padFormCustomId : undefined,
+          icon: padFormIcon,
+          color: padFormColor,
+          arduinoCmd: padFormArduinoCmd.trim() || undefined,
+        };
+      }
+    } else {
+      // Crear nuevo pad
+      const newPad: SportSoundPad = {
+        id: `pad-${selectedSport}-${Date.now()}`,
+        name: padFormName.trim(),
+        soundType: padFormType,
+        builtinKey: padFormType === 'builtin' ? padFormBuiltinKey : undefined,
+        customSoundId: padFormType === 'custom' ? padFormCustomId : undefined,
+        icon: padFormIcon,
+        color: padFormColor,
+        arduinoCmd: padFormArduinoCmd.trim() || undefined,
+      };
+      updatedPads.push(newPad);
+    }
+
+    const updatedTemplate: SportSoundTemplate = {
+      ...currentTemplate,
+      pads: updatedPads,
+    };
+
+    const updatedAll = {
+      ...sportTemplates,
+      [selectedSport]: updatedTemplate,
+    };
+
+    onSaveSportTemplates(updatedAll);
+    setIsPadEditorOpen(false);
   };
 
-  // Procesamiento de Archivos Drag & Drop o Input
+  // Eliminar Pad del deporte
+  const handleDeletePad = (padId: string) => {
+    const updatedPads = currentTemplate.pads.filter((p) => p.id !== padId);
+    const updatedTemplate: SportSoundTemplate = {
+      ...currentTemplate,
+      pads: updatedPads,
+    };
+    onSaveSportTemplates({
+      ...sportTemplates,
+      [selectedSport]: updatedTemplate,
+    });
+  };
+
+  // Reordenar Pad (Mover a la izquierda / derecha)
+  const handleMovePad = (idx: number, direction: 'left' | 'right') => {
+    const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= currentTemplate.pads.length) return;
+
+    const newPads = [...currentTemplate.pads];
+    const temp = newPads[idx];
+    newPads[idx] = newPads[targetIdx];
+    newPads[targetIdx] = temp;
+
+    onSaveSportTemplates({
+      ...sportTemplates,
+      [selectedSport]: {
+        ...currentTemplate,
+        pads: newPads,
+      },
+    });
+  };
+
+  // Restablecer deporte a valores de fábrica
+  const handleResetSport = () => {
+    if (confirm(`¿Restablecer todos los sonidos y pads de ${SPORTS_LIST.find((s) => s.id === selectedSport)?.name} a los valores predeterminados?`)) {
+      const resetOne = resetSportTemplate(selectedSport);
+      onSaveSportTemplates({
+        ...sportTemplates,
+        [selectedSport]: resetOne,
+      });
+    }
+  };
+
+  // Actualizar override específico para el deporte
+  const handleUpdateSportOverride = (eventKey: keyof SoundEventOverrides, value: string) => {
+    const updatedOverrides = {
+      ...(currentTemplate.overrides || {}),
+      [eventKey]: value,
+    };
+    onSaveSportTemplates({
+      ...sportTemplates,
+      [selectedSport]: {
+        ...currentTemplate,
+        overrides: updatedOverrides,
+      },
+    });
+  };
+
+  // Grabación de Micrófono
+  const handleStartRecording = async () => {
+    try {
+      recorderRef.current = new VoiceRecorder();
+      await recorderRef.current.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      setRecordedResult(null);
+
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } catch (e) {
+      console.error('Error al acceder al micrófono:', e);
+      alert('No se pudo acceder al micrófono. Verifica los permisos de tu navegador.');
+    }
+  };
+
+  const handleStopRecording = async () => {
+    if (!recorderRef.current) return;
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+
+    try {
+      const result = await recorderRef.current.stop();
+      setIsRecording(false);
+      setRecordedResult(result);
+      if (!recordedName) {
+        setRecordedName(`Voz Estadio ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+      }
+    } catch (e) {
+      console.error('Error al detener grabación:', e);
+      setIsRecording(false);
+    }
+  };
+
+  const handleSaveRecordedSound = () => {
+    if (!recordedResult || !recordedName.trim()) return;
+
+    const newCustomSound: CustomSoundItem = {
+      id: `rec-${Date.now()}`,
+      name: recordedName.trim(),
+      category: recordedCategory,
+      audioData: recordedResult.audioData,
+      duration: recordedResult.duration,
+      icon: recordedIcon,
+      color: recordedColor,
+      volume: 1.0,
+      createdAt: Date.now(),
+      arduinoCmd: `CMD:SND:VOICE:${recordedName.substring(0, 8).toUpperCase()}`,
+    };
+
+    const updatedCustoms = [...customSounds, newCustomSound];
+    onSaveCustomSounds(updatedCustoms);
+
+    // Si el usuario quiere agregarlo directo al deporte actual
+    if (addRecordToSport) {
+      const newPad: SportSoundPad = {
+        id: `pad-${selectedSport}-${Date.now()}`,
+        name: newCustomSound.name,
+        soundType: 'custom',
+        customSoundId: newCustomSound.id,
+        icon: newCustomSound.icon,
+        color: newCustomSound.color,
+        arduinoCmd: newCustomSound.arduinoCmd,
+      };
+
+      const updatedTemplate = {
+        ...currentTemplate,
+        pads: [...currentTemplate.pads, newPad],
+      };
+
+      onSaveSportTemplates({
+        ...sportTemplates,
+        [selectedSport]: updatedTemplate,
+      });
+    }
+
+    setRecordedResult(null);
+    setRecordedName('');
+    setActiveTab('sports');
+  };
+
+  // Subida de archivos
   const handleFilesSelected = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setIsProcessingFiles(true);
@@ -163,348 +431,545 @@ export const CustomSoundManagerModal: React.FC<Props> = ({
 
   const handleSaveUploadedFiles = () => {
     if (uploadFiles.length === 0) return;
-    onSaveCustomSounds([...customSounds, ...uploadFiles]);
-    setUploadFiles([]);
-    setActiveTab('board');
-  };
 
-  // Iniciar Grabación de Micrófono
-  const handleStartRecording = async () => {
-    sounds.stopAllSounds();
-    setPlayingId(null);
-    const rec = new VoiceRecorder();
-    recorderRef.current = rec;
-    const ok = await rec.start();
-    if (ok) {
-      setIsRecording(true);
-      setRecordingTime(0);
-      setRecordedResult(null);
-      setRecordedName(`Locución ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-      
-      timerIntervalRef.current = setInterval(() => {
-        setRecordingTime((t) => t + 1);
-      }, 1000);
-    }
-  };
+    const updatedCustom = [...customSounds, ...uploadFiles];
+    onSaveCustomSounds(updatedCustom);
 
-  const handleStopRecording = async () => {
-    if (!recorderRef.current) return;
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    setIsRecording(false);
-    try {
-      const res = await recorderRef.current.stop();
-      setRecordedResult(res);
-    } catch (e) {
-      console.error('Error al finalizar grabación:', e);
-    }
-  };
+    // Auto agregar a los pads del deporte actual
+    const newPads: SportSoundPad[] = uploadFiles.map((up) => ({
+      id: `pad-${selectedSport}-${up.id}`,
+      name: up.name,
+      soundType: 'custom',
+      customSoundId: up.id,
+      icon: up.icon || '🎵',
+      color: up.color || '#ec4899',
+      arduinoCmd: up.arduinoCmd,
+    }));
 
-  const handleSaveRecordedSound = () => {
-    if (!recordedResult) return;
-    const newSound: CustomSoundItem = {
-      id: `custom-mic-${Date.now()}`,
-      name: recordedName || 'Grabación de Voz',
-      category: recordedCategory,
-      audioData: recordedResult.audioData,
-      duration: recordedResult.duration,
-      icon: recordedIcon,
-      color: recordedColor,
-      volume: 1.0,
-      createdAt: Date.now(),
+    const updatedTemplate = {
+      ...currentTemplate,
+      pads: [...currentTemplate.pads, ...newPads],
     };
-    onSaveCustomSounds([...customSounds, newSound]);
-    setRecordedResult(null);
-    setActiveTab('board');
-  };
 
-  // Cargar Presets de Fábrica
-  const handleLoadFactoryPresets = () => {
-    const defaults = getDefaultPresetSounds();
-    onSaveCustomSounds([...customSounds, ...defaults]);
-    setActiveTab('board');
-  };
+    onSaveSportTemplates({
+      ...sportTemplates,
+      [selectedSport]: updatedTemplate,
+    });
 
-  // Filtrado de lista de sonidos
-  const filteredSounds = customSounds.filter((s) => {
-    if (activeCategoryFilter === 'all') return true;
-    return s.category === activeCategoryFilter;
-  });
+    setUploadFiles([]);
+    setActiveTab('sports');
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
-        
-        {/* HEADER MODAL */}
-        <div className="bg-slate-950 px-5 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in font-sans">
+      <div 
+        className="bg-slate-900 border border-slate-700 w-full max-w-5xl rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* HEADER */}
+        <div className="bg-slate-950 px-4 sm:px-6 py-3.5 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/50 flex items-center justify-center">
-              <Music className="w-5 h-5 text-purple-400" />
+            <div className="w-10 h-10 rounded-xl bg-pink-500/20 border border-pink-500/40 flex items-center justify-center text-pink-400 shadow-inner">
+              <Sliders className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-black font-stadium text-white tracking-wider flex items-center gap-2">
-                ADMINISTRADOR DE SONIDOS PROPIOS Y VOCES
-              </h2>
-              <p className="text-xs text-slate-400 font-mono-code">
-                Carga MP3/WAV, graba avisos con micrófono y asígnalos a eventos del estadio
+              <h3 className="font-stadium font-bold text-base sm:text-lg text-white tracking-wide flex items-center gap-2">
+                ADMINISTRADOR DE SONIDOS Y PLANTILLAS
+                <span className="text-[10px] bg-pink-500/20 text-pink-300 px-2 py-0.5 rounded-full border border-pink-500/30 uppercase">
+                  Multideporte
+                </span>
+              </h3>
+              <p className="text-slate-400 text-xs">
+                Configura la botonera de sonidos de cada deporte, sube audios MP3 y graba anuncios de voz.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            {playingId && (
-              <button
-                onClick={handleStopAll}
-                className="bg-rose-600 hover:bg-rose-500 text-white font-stadium font-bold text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow animate-pulse"
-              >
-                <Square className="w-3.5 h-3.5" />
-                <span>DETENER SONIDO</span>
-              </button>
-            )}
-
-            <button
-              onClick={onClose}
-              className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
+            title="Cerrar (Esc)"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* TABS DE NAVEGACIÓN */}
-        <div className="bg-slate-950/60 px-5 pt-3 border-b border-slate-800 flex flex-wrap gap-2 text-xs font-stadium font-bold">
+        {/* BARRA DE PESTAÑAS PRINCIPALES */}
+        <div className="bg-slate-950/60 px-3 sm:px-6 py-2 border-b border-slate-800 flex items-center gap-1.5 overflow-x-auto text-xs font-stadium font-bold">
           <button
-            onClick={() => setActiveTab('board')}
-            className={`px-4 py-2.5 rounded-t-xl transition flex items-center gap-2 border-b-2 ${
-              activeTab === 'board'
-                ? 'bg-slate-900 border-purple-500 text-purple-300'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+            onClick={() => setActiveTab('sports')}
+            className={`px-3.5 py-2 rounded-xl flex items-center gap-2 transition whitespace-nowrap ${
+              activeTab === 'sports'
+                ? 'bg-pink-600 text-white shadow-md'
+                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
             }`}
           >
-            <Radio className="w-4 h-4" />
-            <span>SOUNDBOARD & PADS ({customSounds.length})</span>
+            <Settings2 className="w-4 h-4 text-pink-200" />
+            <span>1. PLANTILLAS POR DEPORTE</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('custom_library')}
+            className={`px-3 py-2 rounded-xl flex items-center gap-2 transition whitespace-nowrap ${
+              activeTab === 'custom_library'
+                ? 'bg-purple-600 text-white shadow-md'
+                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+            }`}
+          >
+            <Music className="w-4 h-4 text-purple-300" />
+            <span>2. MIS AUDIOS ({customSounds.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('upload')}
-            className={`px-4 py-2.5 rounded-t-xl transition flex items-center gap-2 border-b-2 ${
+            className={`px-3 py-2 rounded-xl flex items-center gap-2 transition whitespace-nowrap ${
               activeTab === 'upload'
-                ? 'bg-slate-900 border-purple-500 text-purple-300'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
             }`}
           >
-            <Upload className="w-4 h-4" />
-            <span>CARGAR ARCHIVOS (MP3/WAV)</span>
+            <Upload className="w-4 h-4 text-blue-300" />
+            <span>3. SUBIR MP3/WAV</span>
           </button>
 
           <button
             onClick={() => setActiveTab('record')}
-            className={`px-4 py-2.5 rounded-t-xl transition flex items-center gap-2 border-b-2 ${
+            className={`px-3 py-2 rounded-xl flex items-center gap-2 transition whitespace-nowrap ${
               activeTab === 'record'
-                ? 'bg-slate-900 border-purple-500 text-purple-300'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                ? 'bg-rose-600 text-white shadow-md'
+                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
             }`}
           >
-            <Mic className="w-4 h-4 text-rose-400" />
-            <span>GRABAR CON MICRÓFONO</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('overrides')}
-            className={`px-4 py-2.5 rounded-t-xl transition flex items-center gap-2 border-b-2 ${
-              activeTab === 'overrides'
-                ? 'bg-slate-900 border-purple-500 text-purple-300'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Zap className="w-4 h-4 text-amber-400" />
-            <span>ASOCIAR A EVENTOS (CHICHARRA / GOL)</span>
+            <Mic className="w-4 h-4 text-rose-300" />
+            <span>4. GRABAR VOZ</span>
           </button>
 
           <button
             onClick={() => setActiveTab('pack')}
-            className={`px-4 py-2.5 rounded-t-xl transition flex items-center gap-2 border-b-2 ${
+            className={`px-3 py-2 rounded-xl flex items-center gap-2 transition whitespace-nowrap ${
               activeTab === 'pack'
-                ? 'bg-slate-900 border-purple-500 text-purple-300'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
             }`}
           >
-            <Download className="w-4 h-4" />
-            <span>PACKS & BACKUP</span>
+            <FolderPlus className="w-4 h-4 text-emerald-300" />
+            <span>5. PACKS & COPIAS</span>
           </button>
         </div>
 
-        {/* CONTENIDO DE TABS */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-4">
-          
-          {/* TAB 1: SOUNDBOARD & PADS */}
-          {activeTab === 'board' && (
-            <div className="space-y-4">
-              {/* Filtros de Categoría */}
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-                <div className="flex flex-wrap items-center gap-1.5">
+        {/* CONTENIDO DE LA PESTAÑA */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+
+          {/* ========================================================== */}
+          {/* 1. CONFIGURACIÓN DE PLANTILLAS POR DEPORTE */}
+          {/* ========================================================== */}
+          {activeTab === 'sports' && (
+            <div className="space-y-6">
+              
+              {/* SELECTOR DE DEPORTE */}
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-stadium font-bold text-slate-300 flex items-center gap-2">
+                    <span>🏆 SELECCIONA EL DEPORTE A CONFIGURAR:</span>
+                  </label>
+
                   <button
-                    onClick={() => setActiveCategoryFilter('all')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                      activeCategoryFilter === 'all'
-                        ? 'bg-purple-600 text-white shadow'
-                        : 'bg-slate-800 text-slate-400 hover:text-white'
-                    }`}
+                    onClick={handleResetSport}
+                    className="text-[11px] font-stadium text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 px-2.5 py-1 rounded-lg border border-rose-500/30 flex items-center gap-1 transition"
+                    title="Restablecer este deporte a los sonidos de fábrica"
                   >
-                    Todos ({customSounds.length})
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Restablecer {SPORTS_LIST.find((s) => s.id === selectedSport)?.name} a fábrica</span>
                   </button>
-                  {CATEGORIES.map((cat) => {
-                    const count = customSounds.filter((s) => s.category === cat.id).length;
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                  {SPORTS_LIST.map((sp) => {
+                    const isSelected = selectedSport === sp.id;
+                    const padCount = sportTemplates[sp.id]?.pads?.length || 0;
                     return (
                       <button
-                        key={cat.id}
-                        onClick={() => setActiveCategoryFilter(cat.id)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                          activeCategoryFilter === cat.id
-                            ? 'bg-purple-600 text-white shadow'
-                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                        key={sp.id}
+                        onClick={() => setSelectedSport(sp.id)}
+                        className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition text-xs font-stadium font-bold ${
+                          isSelected
+                            ? 'bg-pink-600/30 border-pink-500 text-white shadow-lg ring-1 ring-pink-400'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                         }`}
                       >
-                        <span>{cat.icon}</span>
-                        <span className="hidden sm:inline">{cat.name}</span>
-                        <span className="text-[10px] opacity-75">({count})</span>
+                        <span className="text-xl">{sp.icon}</span>
+                        <span>{sp.name}</span>
+                        <span className="text-[10px] text-pink-300 font-mono-code font-normal">
+                          {padCount} pads
+                        </span>
                       </button>
                     );
                   })}
                 </div>
+              </div>
+
+              {/* BARRA DE HERRAMIENTAS DEL DEPORTE SELECCIONADO */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800">
+                <div>
+                  <h4 className="font-stadium font-bold text-white text-sm flex items-center gap-2">
+                    <span>{SPORTS_LIST.find((s) => s.id === selectedSport)?.icon}</span>
+                    <span>Botonera de Sonidos para {SPORTS_LIST.find((s) => s.id === selectedSport)?.name}</span>
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {currentTemplate.description}
+                  </p>
+                </div>
 
                 <button
-                  onClick={() => setActiveTab('upload')}
-                  className="bg-purple-600 hover:bg-purple-500 text-white font-stadium font-bold text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow"
+                  onClick={handleOpenNewPad}
+                  className="bg-pink-600 hover:bg-pink-500 text-white font-stadium font-bold text-xs px-4 py-2 rounded-xl flex items-center gap-2 shadow-lg shadow-pink-600/20 active:scale-95 transition"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>+ AGREGAR SONIDO</span>
+                  <Plus className="w-4 h-4" />
+                  <span>+ AÑADIR BOTÓN DE SONIDO</span>
                 </button>
               </div>
 
-              {/* Grid de Pads */}
-              {filteredSounds.length === 0 ? (
-                <div className="text-center py-12 bg-slate-950/50 border border-slate-800 rounded-2xl p-6 space-y-3">
-                  <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center mx-auto text-2xl">
-                    🎵
-                  </div>
-                  <h3 className="text-base font-bold text-white font-stadium">
-                    NO TIENES SONIDOS EN ESTA CATEGORÍA
-                  </h3>
-                  <p className="text-xs text-slate-400 max-w-md mx-auto">
-                    Carga archivos MP3/WAV o graba audios con tu micrófono para tenerlos listos en el tablero de control.
-                  </p>
-                  <div className="flex justify-center gap-3 pt-2">
-                    <button
-                      onClick={() => setActiveTab('upload')}
-                      className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs px-4 py-2 rounded-xl"
-                    >
-                      Subir Archivos
-                    </button>
-                    <button
-                      onClick={handleLoadFactoryPresets}
-                      className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs px-4 py-2 rounded-xl"
-                    >
-                      Cargar Muestras Prediseñadas
-                    </button>
-                  </div>
+              {/* GRILLA DE PADS DEL DEPORTE */}
+              {currentTemplate.pads.length === 0 ? (
+                <div className="text-center py-10 bg-slate-950/40 rounded-2xl border border-dashed border-slate-800 p-6 space-y-3">
+                  <p className="text-slate-400 text-sm">No hay botones de sonido configurados para este deporte.</p>
+                  <button
+                    onClick={handleOpenNewPad}
+                    className="bg-pink-600 text-white font-stadium font-bold text-xs px-4 py-2 rounded-xl"
+                  >
+                    + Añadir el primer botón
+                  </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {filteredSounds.map((sound) => {
-                    const isPlaying = playingId === sound.id;
-                    const padColor = sound.color || '#3b82f6';
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {currentTemplate.pads.map((pad, idx) => {
+                    const isPlaying = playingId === pad.id;
+                    const customItem = pad.soundType === 'custom' && pad.customSoundId
+                      ? customSounds.find((c) => c.id === pad.customSoundId)
+                      : null;
+
                     return (
                       <div
-                        key={sound.id}
-                        className={`bg-slate-950/90 border rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-200 group relative ${
-                          isPlaying
-                            ? 'border-2 shadow-lg shadow-purple-950/50 scale-[1.01]'
-                            : 'border-slate-800 hover:border-slate-700'
-                        }`}
-                        style={{
-                          borderColor: isPlaying ? padColor : undefined,
-                        }}
+                        key={pad.id}
+                        className="bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-2.5 flex flex-col justify-between hover:border-slate-700 transition relative group shadow-md"
                       >
-                        {/* Header del Pad */}
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="flex items-center space-x-2.5 overflow-hidden">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center space-x-2">
                             <span 
-                              className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 shadow"
-                              style={{ backgroundColor: `${padColor}25`, color: padColor, border: `1px solid ${padColor}40` }}
+                              className="w-8 h-8 rounded-xl flex items-center justify-center text-base shadow-sm font-bold"
+                              style={{ backgroundColor: pad.color || '#3b82f6' }}
                             >
-                              {sound.icon || '🎵'}
+                              {pad.icon || '🎵'}
                             </span>
-                            <div className="overflow-hidden">
-                              <h4 className="font-stadium font-bold text-sm text-white truncate group-hover:text-purple-300 transition">
-                                {sound.name}
-                              </h4>
-                              <div className="flex items-center space-x-2 text-[10px] text-slate-400 font-mono-code">
-                                <span>{sound.duration ? `${sound.duration}s` : 'Audio'}</span>
-                                <span>•</span>
-                                <span className="uppercase">{sound.category}</span>
-                              </div>
+                            <div>
+                              <h5 className="font-stadium font-bold text-xs text-white leading-tight">
+                                {pad.name}
+                              </h5>
+                              <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono-code mt-0.5">
+                                {pad.soundType === 'builtin' ? (
+                                  <span className="text-cyan-400">Sintetizado</span>
+                                ) : (
+                                  <span className="text-pink-400">
+                                    Audio Propio {customItem ? `(${customItem.duration || '0'}s)` : ''}
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Botón de Test Play */}
+                          <button
+                            onClick={() => handlePlayPad(pad)}
+                            className={`p-2 rounded-xl transition ${
+                              isPlaying
+                                ? 'bg-rose-600 text-white animate-pulse'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                            }`}
+                            title={isPlaying ? 'Detener' : 'Probar sonido'}
+                          >
+                            {isPlaying ? <Square className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-slate-200" />}
+                          </button>
+                        </div>
+
+                        {pad.arduinoCmd && (
+                          <div className="text-[10px] text-slate-500 font-mono-code bg-slate-900 px-2 py-0.5 rounded border border-slate-800/80 truncate">
+                            Arduino: <code>{pad.arduinoCmd}</code>
+                          </div>
+                        )}
+
+                        {/* Botones de acción del Pad: Reordenar, Editar, Eliminar */}
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-900 text-slate-400 text-xs">
+                          <div className="flex items-center space-x-1">
+                            <button
+                              onClick={() => handleMovePad(idx, 'left')}
+                              disabled={idx === 0}
+                              className="p-1 hover:text-white disabled:opacity-25 transition"
+                              title="Mover a la izquierda"
+                            >
+                              <ArrowLeft className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleMovePad(idx, 'right')}
+                              disabled={idx === currentTemplate.pads.length - 1}
+                              className="p-1 hover:text-white disabled:opacity-25 transition"
+                              title="Mover a la derecha"
+                            >
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center space-x-1">
+                            <button
+                              onClick={() => handleOpenEditPad(pad)}
+                              className="p-1 hover:text-cyan-400 transition"
+                              title="Modificar nombre, icono o sonido"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeletePad(pad.id)}
+                              className="p-1 hover:text-rose-400 transition"
+                              title="Eliminar botón"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* SECCIÓN DE OVERRIDES / EVENTOS AUTOMÁTICOS DEL DEPORTE */}
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <ShieldAlert className="w-4 h-4 text-amber-400" />
+                    <h4 className="font-stadium font-bold text-white text-sm">
+                      EVENTOS AUTOMÁTICOS DE {SPORTS_LIST.find((s) => s.id === selectedSport)?.name.toUpperCase()}
+                    </h4>
+                  </div>
+                  <span className="text-[11px] text-slate-400">Sonido que se disparará al ocurrir cada evento</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  
+                  {/* Fin de Periodo / Cuarto */}
+                  <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex flex-col justify-between gap-1.5">
+                    <span className="text-slate-300 font-bold">🏁 Fin de Periodo / Cuarto / Tiempo:</span>
+                    <select
+                      value={currentTemplate.overrides?.onPeriodEndHorn || 'default'}
+                      onChange={(e) => handleUpdateSportOverride('onPeriodEndHorn', e.target.value)}
+                      className="bg-slate-950 border border-slate-700 text-white rounded-lg p-1.5 focus:border-pink-500"
+                    >
+                      <option value="default">Predeterminado del deporte</option>
+                      <optgroup label="Sonidos Integrados">
+                        {BUILTIN_SOUNDS_CATALOG.map((b) => (
+                          <option key={b.key} value={b.key}>{b.defaultIcon} {b.name}</option>
+                        ))}
+                      </optgroup>
+                      {customSounds.length > 0 && (
+                        <optgroup label="Mis Audios Propios">
+                          {customSounds.map((c) => (
+                            <option key={c.id} value={c.id}>{c.icon || '🎵'} {c.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  </div>
+
+                  {/* Puntos / Gol Local */}
+                  <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex flex-col justify-between gap-1.5">
+                    <span className="text-slate-300 font-bold">⚽🏀 Anotación / Gol Local:</span>
+                    <select
+                      value={currentTemplate.overrides?.onScoreLocal || 'default'}
+                      onChange={(e) => handleUpdateSportOverride('onScoreLocal', e.target.value)}
+                      className="bg-slate-950 border border-slate-700 text-white rounded-lg p-1.5 focus:border-pink-500"
+                    >
+                      <option value="default">Predeterminado del deporte</option>
+                      <optgroup label="Sonidos Integrados">
+                        {BUILTIN_SOUNDS_CATALOG.map((b) => (
+                          <option key={b.key} value={b.key}>{b.defaultIcon} {b.name}</option>
+                        ))}
+                      </optgroup>
+                      {customSounds.length > 0 && (
+                        <optgroup label="Mis Audios Propios">
+                          {customSounds.map((c) => (
+                            <option key={c.id} value={c.id}>{c.icon || '🎵'} {c.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  </div>
+
+                  {/* Tiempo Muerto */}
+                  <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex flex-col justify-between gap-1.5">
+                    <span className="text-slate-300 font-bold">⏸️ Solicitud de Tiempo Muerto (Time-Out):</span>
+                    <select
+                      value={currentTemplate.overrides?.onTimeout || 'default'}
+                      onChange={(e) => handleUpdateSportOverride('onTimeout', e.target.value)}
+                      className="bg-slate-950 border border-slate-700 text-white rounded-lg p-1.5 focus:border-pink-500"
+                    >
+                      <option value="default">Predeterminado (Bocina Time-out)</option>
+                      <optgroup label="Sonidos Integrados">
+                        {BUILTIN_SOUNDS_CATALOG.map((b) => (
+                          <option key={b.key} value={b.key}>{b.defaultIcon} {b.name}</option>
+                        ))}
+                      </optgroup>
+                      {customSounds.length > 0 && (
+                        <optgroup label="Mis Audios Propios">
+                          {customSounds.map((c) => (
+                            <option key={c.id} value={c.id}>{c.icon || '🎵'} {c.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  </div>
+
+                  {/* Tarjetas / Faltas */}
+                  <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex flex-col justify-between gap-1.5">
+                    <span className="text-slate-300 font-bold">🟥 Sanciones / Tarjetas / Faltas:</span>
+                    <select
+                      value={currentTemplate.overrides?.onCard || 'default'}
+                      onChange={(e) => handleUpdateSportOverride('onCard', e.target.value)}
+                      className="bg-slate-950 border border-slate-700 text-white rounded-lg p-1.5 focus:border-pink-500"
+                    >
+                      <option value="default">Predeterminado (Alarma Sanción)</option>
+                      <optgroup label="Sonidos Integrados">
+                        {BUILTIN_SOUNDS_CATALOG.map((b) => (
+                          <option key={b.key} value={b.key}>{b.defaultIcon} {b.name}</option>
+                        ))}
+                      </optgroup>
+                      {customSounds.length > 0 && (
+                        <optgroup label="Mis Audios Propios">
+                          {customSounds.map((c) => (
+                            <option key={c.id} value={c.id}>{c.icon || '🎵'} {c.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* ========================================================== */}
+          {/* 2. LIBRERÍA DE AUDIOS PROPIOS (MIS AUDIOS) */}
+          {/* ========================================================== */}
+          {activeTab === 'custom_library' && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                <div>
+                  <h4 className="font-stadium font-bold text-white text-sm">ARCHIVOS DE AUDIO Y VOCES GRABADAS ({customSounds.length})</h4>
+                  <p className="text-xs text-slate-400">Audios guardados en la memoria local de tu navegador.</p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setActiveTab('upload')}
+                    className="bg-blue-600 hover:bg-blue-500 text-white font-stadium font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Subir MP3</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('record')}
+                    className="bg-rose-600 hover:bg-rose-500 text-white font-stadium font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow"
+                  >
+                    <Mic className="w-3.5 h-3.5" />
+                    <span>Grabar Mic</span>
+                  </button>
+                </div>
+              </div>
+
+              {customSounds.length === 0 ? (
+                <div className="text-center py-12 bg-slate-950/40 rounded-2xl border border-dashed border-slate-800 p-6 space-y-3">
+                  <p className="text-slate-400 text-sm">No has subido audios todavía.</p>
+                  <p className="text-slate-500 text-xs">Sube tus canciones de aliento, grabaciones de locución o efectos en MP3/WAV.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {customSounds.map((item) => {
+                    const isPlaying = playingId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-2.5 flex flex-col justify-between shadow-md"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center space-x-2.5">
+                            <span 
+                              className="w-9 h-9 rounded-xl flex items-center justify-center text-lg shadow font-bold text-white"
+                              style={{ backgroundColor: item.color || '#ec4899' }}
+                            >
+                              {item.icon || '🎵'}
+                            </span>
+                            <div>
+                              <h5 className="font-stadium font-bold text-xs text-white leading-tight">{item.name}</h5>
+                              <span className="text-[10px] text-slate-400 font-mono-code block mt-0.5">
+                                {item.duration ? `${item.duration}s` : 'Audio'} • {item.category}
+                              </span>
                             </div>
                           </div>
 
                           <button
-                            onClick={() => handleDeleteSound(sound.id)}
-                            className="text-slate-500 hover:text-rose-400 p-1 rounded-lg hover:bg-rose-950/30 transition opacity-60 group-hover:opacity-100"
-                            title="Eliminar sonido"
+                            onClick={() => handleTogglePlayCustom(item)}
+                            className={`p-2 rounded-xl transition ${
+                              isPlaying
+                                ? 'bg-rose-600 text-white animate-pulse'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                            }`}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            {isPlaying ? <Square className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-slate-200" />}
                           </button>
                         </div>
 
-                        {/* Botón Principal de Reproducción (Pad Táctil) */}
-                        <button
-                          onClick={() => handleTogglePlay(sound)}
-                          className={`w-full py-3 px-4 rounded-xl font-stadium font-black text-sm flex items-center justify-center space-x-2 transition shadow-lg my-1 ${
-                            isPlaying
-                              ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse'
-                              : 'hover:opacity-90 active:scale-95 text-white'
-                          }`}
-                          style={{
-                            backgroundColor: isPlaying ? '#e11d48' : padColor,
-                          }}
-                        >
-                          {isPlaying ? (
-                            <>
-                              <Square className="w-4 h-4 fill-white" />
-                              <span>DETENER REPRODUCCIÓN</span>
-                            </>
-                          ) : (
-                            <>
-                              <Play className="w-4 h-4 fill-white" />
-                              <span>DISPARAR SONIDO</span>
-                            </>
-                          )}
-                        </button>
+                        {/* Botón para insertar este audio en el deporte actual */}
+                        <div className="pt-2 border-t border-slate-900 flex items-center justify-between gap-2">
+                          <button
+                            onClick={() => {
+                              const newPad: SportSoundPad = {
+                                id: `pad-${selectedSport}-${Date.now()}`,
+                                name: item.name,
+                                soundType: 'custom',
+                                customSoundId: item.id,
+                                icon: item.icon || '🎵',
+                                color: item.color || '#ec4899',
+                                arduinoCmd: item.arduinoCmd,
+                              };
+                              onSaveSportTemplates({
+                                ...sportTemplates,
+                                [selectedSport]: {
+                                  ...currentTemplate,
+                                  pads: [...currentTemplate.pads, newPad],
+                                }
+                              });
+                              setActiveTab('sports');
+                            }}
+                            className="text-[11px] font-stadium text-pink-400 hover:text-pink-300 hover:bg-pink-950/40 px-2 py-1 rounded-lg border border-pink-500/30 flex items-center gap-1 transition"
+                            title={`Agregar este audio a la botonera de ${SPORTS_LIST.find((s) => s.id === selectedSport)?.name}`}
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Añadir a {SPORTS_LIST.find((s) => s.id === selectedSport)?.name}</span>
+                          </button>
 
-                        {/* Controles de Pad (Volumen y Loop) */}
-                        <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-900 mt-2">
-                          <div className="flex items-center space-x-2 w-1/2">
-                            <Volume2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                            <input
-                              type="range"
-                              min="0.1"
-                              max="1"
-                              step="0.05"
-                              value={sound.volume ?? 1.0}
-                              onChange={(e) => handleUpdateSound(sound.id, { volume: parseFloat(e.target.value) })}
-                              className="w-full h-1 bg-slate-800 rounded accent-purple-500 cursor-pointer"
-                              title={`Volumen: ${Math.round((sound.volume ?? 1) * 100)}%`}
-                            />
-                          </div>
-
-                          <label className="flex items-center space-x-1.5 cursor-pointer text-[10px] text-slate-400 hover:text-slate-200">
-                            <input
-                              type="checkbox"
-                              checked={!!sound.loop}
-                              onChange={(e) => handleUpdateSound(sound.id, { loop: e.target.checked })}
-                              className="rounded bg-slate-900 border-slate-700 text-purple-600 focus:ring-purple-500 w-3 h-3"
-                            />
-                            <span>Bucle</span>
-                          </label>
+                          <button
+                            onClick={() => {
+                              if (confirm(`¿Eliminar el audio "${item.name}" de la librería?`)) {
+                                sounds.removeCustomSoundCache(item.id);
+                                onSaveCustomSounds(customSounds.filter((c) => c.id !== item.id));
+                              }
+                            }}
+                            className="p-1 text-slate-500 hover:text-rose-400 transition"
+                            title="Eliminar de la librería"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     );
@@ -514,421 +979,193 @@ export const CustomSoundManagerModal: React.FC<Props> = ({
             </div>
           )}
 
-          {/* TAB 2: CARGAR ARCHIVOS */}
+          {/* ========================================================== */}
+          {/* 3. SUBIR MP3 / WAV */}
+          {/* ========================================================== */}
           {activeTab === 'upload' && (
-            <div className="space-y-4 max-w-2xl mx-auto">
-              {/* Dropzone */}
+            <div className="space-y-4">
               <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragging(true);
-                }}
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={(e) => {
                   e.preventDefault();
                   setIsDragging(false);
                   handleFilesSelected(e.dataTransfer.files);
                 }}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition flex flex-col items-center justify-center space-y-3 ${
+                className={`border-2 border-dashed rounded-3xl p-8 text-center transition cursor-pointer flex flex-col items-center justify-center space-y-3 ${
                   isDragging
-                    ? 'border-purple-400 bg-purple-950/20'
-                    : 'border-slate-700 hover:border-purple-500 bg-slate-950/40 hover:bg-slate-950/70'
+                    ? 'border-blue-500 bg-blue-500/10'
+                    : 'border-slate-700 hover:border-slate-500 bg-slate-950'
                 }`}
+                onClick={() => fileInputRef.current?.click()}
               >
+                <div className="w-14 h-14 rounded-2xl bg-blue-500/20 text-blue-400 flex items-center justify-center shadow-lg">
+                  <Upload className="w-7 h-7" />
+                </div>
+                <div>
+                  <h4 className="font-stadium font-bold text-white text-base">
+                    Haz clic o arrastra tus audios aquí (MP3, WAV, OGG, M4A)
+                  </h4>
+                  <p className="text-slate-400 text-xs mt-1">
+                    Puedes subir varios archivos a la vez para cargarlos en el marcador.
+                  </p>
+                </div>
+
                 <input
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac,.aac,.webm"
+                  accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac,.aac"
                   className="hidden"
                   onChange={(e) => handleFilesSelected(e.target.files)}
                 />
-
-                <div className="w-16 h-16 rounded-2xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
-                  <Upload className="w-8 h-8" />
-                </div>
-
-                <div>
-                  <h3 className="text-base font-bold text-white font-stadium">
-                    ARRASTRA Y SUELTA TUS ARCHIVOS DE AUDIO AQUÍ
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1">
-                    o haz clic para explorar en tu computadora
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] font-mono-code text-slate-400">
-                  <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">MP3</span>
-                  <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">WAV</span>
-                  <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">OGG</span>
-                  <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">M4A</span>
-                  <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">FLAC</span>
-                  <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">WEBM</span>
-                </div>
               </div>
 
-              {/* Lista de Archivos en cola para guardar */}
+              {/* Lista de archivos listos para guardar */}
               {uploadFiles.length > 0 && (
-                <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                    <span className="text-xs font-bold text-slate-200 font-stadium">
-                      ARCHIVOS LISTOS PARA AGREGAR ({uploadFiles.length})
-                    </span>
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h5 className="font-stadium font-bold text-white text-xs">
+                      ARCHIVOS LISTOS PARA IMPORTAR ({uploadFiles.length})
+                    </h5>
                     <button
-                      onClick={() => setUploadFiles([])}
-                      className="text-xs text-rose-400 hover:underline"
+                      onClick={handleSaveUploadedFiles}
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-stadium font-bold text-xs px-4 py-1.5 rounded-xl shadow"
                     >
-                      Limpiar
+                      GUARDAR Y AÑADIR A {SPORTS_LIST.find((s) => s.id === selectedSport)?.name.toUpperCase()}
                     </button>
                   </div>
 
-                  <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
-                    {uploadFiles.map((item, idx) => (
-                      <div
-                        key={item.id}
-                        className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs"
-                      >
-                        <div className="flex items-center space-x-2.5 flex-1 min-w-[200px]">
-                          <span className="text-lg">{item.icon || '🎵'}</span>
-                          <div className="flex-1">
-                            <input
-                              type="text"
-                              value={item.name}
-                              onChange={(e) => {
-                                const copy = [...uploadFiles];
-                                copy[idx].name = e.target.value;
-                                setUploadFiles(copy);
-                              }}
-                              className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white font-bold w-full outline-none focus:border-purple-500"
-                              placeholder="Nombre del sonido"
-                            />
-                            <div className="text-[10px] text-slate-400 mt-0.5">
-                              {item.fileName} • {item.duration}s
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <select
-                            value={item.category}
-                            onChange={(e) => {
-                              const copy = [...uploadFiles];
-                              copy[idx].category = e.target.value as SoundCategory;
-                              setUploadFiles(copy);
-                            }}
-                            className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs outline-none"
-                          >
-                            {CATEGORIES.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.icon} {c.name}
-                              </option>
-                            ))}
-                          </select>
-
-                          <button
-                            onClick={() => handleTogglePlay(item)}
-                            className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg"
-                            title="Probar sonido"
-                          >
-                            {playingId === item.id ? <Square className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                          </button>
-
-                          <button
-                            onClick={() => setUploadFiles(uploadFiles.filter((_, i) => i !== idx))}
-                            className="text-slate-500 hover:text-rose-400 p-1"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {uploadFiles.map((f, idx) => (
+                      <div key={idx} className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                        <span className="font-stadium text-slate-200 truncate">{f.name}</span>
+                        <span className="text-slate-500 font-mono-code">{f.duration}s</span>
                       </div>
                     ))}
                   </div>
-
-                  <button
-                    onClick={handleSaveUploadedFiles}
-                    className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-stadium font-black text-sm rounded-xl flex items-center justify-center space-x-2 shadow-lg transition"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>GUARDAR EN MI BIBLIOTECA DE SONIDOS</span>
-                  </button>
                 </div>
               )}
             </div>
           )}
 
-          {/* TAB 3: GRABAR CON MICRÓFONO */}
+          {/* ========================================================== */}
+          {/* 4. GRABAR CON MICRÓFONO */}
+          {/* ========================================================== */}
           {activeTab === 'record' && (
-            <div className="space-y-4 max-w-lg mx-auto text-center py-4">
-              <div className="bg-slate-950 p-6 rounded-3xl border border-slate-800 space-y-4">
-                <div className="flex items-center justify-center">
-                  <div className={`w-24 h-24 rounded-full flex items-center justify-center transition-all ${
-                    isRecording 
-                      ? 'bg-rose-600/30 border-4 border-rose-500 animate-pulse ring-8 ring-rose-500/20'
-                      : 'bg-slate-900 border-2 border-slate-700 text-slate-300'
-                  }`}>
-                    <Mic className={`w-10 h-10 ${isRecording ? 'text-rose-400' : 'text-slate-400'}`} />
-                  </div>
+            <div className="bg-slate-950 p-6 rounded-3xl border border-slate-800 space-y-6 max-w-xl mx-auto text-center">
+              <div className="space-y-1">
+                <h4 className="font-stadium font-bold text-white text-base flex items-center justify-center gap-2">
+                  <Mic className="w-5 h-5 text-rose-400" />
+                  GRABADOR DE LOCUCIÓN Y AVISOS DE ESTADIO
+                </h4>
+                <p className="text-slate-400 text-xs">
+                  Graba tu propia voz (ej. "¡Tiempo muerto de River!", "¡Gol de Boca!", "¡Falta técnica!")
+                </p>
+              </div>
+
+              {/* Botón de Grabar */}
+              <div className="py-4 flex flex-col items-center justify-center space-y-3">
+                <button
+                  onClick={isRecording ? handleStopRecording : handleStartRecording}
+                  className={`w-20 h-20 rounded-full flex items-center justify-center transition shadow-2xl ${
+                    isRecording
+                      ? 'bg-rose-600 text-white animate-pulse ring-8 ring-rose-500/30'
+                      : 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/50'
+                  }`}
+                >
+                  {isRecording ? <Square className="w-8 h-8 fill-white" /> : <Mic className="w-8 h-8" />}
+                </button>
+
+                <div className="font-mono-code font-bold text-lg text-white">
+                  {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
                 </div>
+                <span className="text-xs text-slate-400">
+                  {isRecording ? '🔴 Grabando en vivo... Presiona para finalizar' : 'Presiona el micrófono para iniciar grabación'}
+                </span>
+              </div>
 
-                <div>
-                  <h3 className="text-lg font-stadium font-black text-white">
-                    {isRecording ? 'GRABANDO AUDIO EN VIVO...' : 'GRABADOR DE VOZ Y AVISOS'}
-                  </h3>
-                  <p className="text-xs text-slate-400 font-mono-code mt-1">
-                    {isRecording 
-                      ? `Tiempo grabado: 00:${String(recordingTime).padStart(2, '0')}`
-                      : 'Graba anuncios de locutor, consignas del colegio o cánticos de aliento'}
-                  </p>
-                </div>
-
-                {!isRecording ? (
-                  <button
-                    onClick={handleStartRecording}
-                    className="bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-stadium font-bold text-sm px-6 py-3 rounded-2xl flex items-center justify-center space-x-2 mx-auto shadow-lg shadow-rose-950/50 transition"
-                  >
-                    <Mic className="w-4 h-4" />
-                    <span>INICIAR GRABACIÓN</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleStopRecording}
-                    className="bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-stadium font-bold text-sm px-6 py-3 rounded-2xl flex items-center justify-center space-x-2 mx-auto border border-slate-600 transition"
-                  >
-                    <Square className="w-4 h-4 fill-white" />
-                    <span>DETENER Y GUARDAR</span>
-                  </button>
-                )}
-
-                {/* Formulario después de grabar */}
-                {recordedResult && !isRecording && (
-                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-left space-y-3 mt-4">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                      <span className="text-xs font-bold text-slate-200">Audio Grabado ({recordedResult.duration}s)</span>
-                      <button
-                        onClick={() => {
-                          const testSound: CustomSoundItem = {
-                            id: 'temp-preview',
-                            name: 'Preview',
-                            category: 'announcement',
-                            audioData: recordedResult.audioData,
-                            createdAt: 0,
-                          };
-                          handleTogglePlay(testSound);
-                        }}
-                        className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-3 py-1 rounded-lg flex items-center gap-1 font-bold"
-                      >
-                        <Play className="w-3 h-3" />
-                        <span>Escuchar</span>
-                      </button>
-                    </div>
-
+              {/* Resultado grabado */}
+              {recordedResult && (
+                <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 text-left animate-fade-in">
+                  <h5 className="font-stadium font-bold text-xs text-white">CONFIGURAR AUDIO GRABADO</h5>
+                  
+                  <div className="space-y-2 text-xs">
                     <div>
-                      <label className="text-[11px] text-slate-400 font-bold block mb-1">Nombre del Aviso / Sonido:</label>
+                      <label className="text-slate-400 block mb-1">Nombre del Audio / Anuncio:</label>
                       <input
                         type="text"
                         value={recordedName}
                         onChange={(e) => setRecordedName(e.target.value)}
-                        placeholder="Ej: ¡ÚLTIMOS 10 SEGUNDOS!"
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold text-xs outline-none focus:border-purple-500"
+                        placeholder="Ej: Anuncio Tiempo Muerto"
+                        className="w-full bg-slate-950 border border-slate-700 text-white px-3 py-2 rounded-xl focus:border-rose-500"
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[11px] text-slate-400 font-bold block mb-1">Categoría:</label>
-                        <select
-                          value={recordedCategory}
-                          onChange={(e) => setRecordedCategory(e.target.value as SoundCategory)}
-                          className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 text-xs outline-none"
-                        >
-                          {CATEGORIES.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.icon} {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-[11px] text-slate-400 font-bold block mb-1">Icono:</label>
-                        <div className="flex gap-1 overflow-x-auto py-1">
-                          {['🎙️', '📢', '⚠️', '🔥', '🏀', '⚽', '🏆'].map((em) => (
-                            <button
-                              key={em}
-                              type="button"
-                              onClick={() => setRecordedIcon(em)}
-                              className={`p-1.5 rounded-lg border text-sm ${
-                                recordedIcon === em ? 'bg-purple-950 border-purple-500' : 'bg-slate-950 border-slate-800'
-                              }`}
-                            >
-                              {em}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                    <div className="flex items-center space-x-2 pt-2">
+                      <input
+                        type="checkbox"
+                        id="addToSport"
+                        checked={addRecordToSport}
+                        onChange={(e) => setAddRecordToSport(e.target.checked)}
+                        className="rounded bg-slate-950 border-slate-700 text-rose-600 focus:ring-rose-500"
+                      />
+                      <label htmlFor="addToSport" className="text-slate-300 text-xs">
+                        Añadir directamente a la botonera de <b>{SPORTS_LIST.find((s) => s.id === selectedSport)?.name}</b>
+                      </label>
                     </div>
 
                     <button
                       onClick={handleSaveRecordedSound}
-                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-stadium font-bold text-xs rounded-xl shadow mt-2"
+                      className="w-full mt-3 bg-rose-600 hover:bg-rose-500 text-white font-stadium font-bold py-2.5 rounded-xl shadow"
                     >
-                      AGREGAR A MIS SONIDOS
+                      GUARDAR GRABACIÓN
                     </button>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* TAB 4: ASOCIAR A EVENTOS (OVERRIDES) */}
-          {activeTab === 'overrides' && (
-            <div className="space-y-4 max-w-2xl mx-auto">
-              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                <div className="flex items-center space-x-2 border-b border-slate-800 pb-2 mb-3">
-                  <Zap className="w-4 h-4 text-amber-400" />
-                  <h3 className="text-sm font-stadium font-bold text-white">
-                    MAPEO DE DISPARADORES AUTOMÁTICOS DEL TABLERO
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-400 mb-4">
-                  Elige qué sonido se ejecutará cuando ocurran eventos oficiales durante el partido en lugar del tono predeterminado.
-                </p>
-
-                <div className="space-y-3 text-xs">
-                  {/* Fin de Tiempo / Cuarto */}
-                  <div className="bg-slate-900/90 border border-slate-800 p-3 rounded-xl flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-base">🚨</span>
-                      <div>
-                        <div className="font-bold text-slate-200">Fin de Tiempo / Cuarto (00:00)</div>
-                        <div className="text-[10px] text-slate-400">Chicharra final cuando el cronómetro llega a cero</div>
-                      </div>
-                    </div>
-                    <select
-                      value={soundOverrides.onPeriodEndHorn || 'default'}
-                      onChange={(e) => onSaveSoundOverrides({ ...soundOverrides, onPeriodEndHorn: e.target.value })}
-                      className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 font-bold outline-none"
-                    >
-                      <option value="default">Predeterminado (Bocina Estadio NBA)</option>
-                      {customSounds.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.icon} {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Violación 24s Shot Clock */}
-                  <div className="bg-slate-900/90 border border-slate-800 p-3 rounded-xl flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-base">⏳</span>
-                      <div>
-                        <div className="font-bold text-slate-200">Fin de Posesión (24s / 14s)</div>
-                        <div className="text-[10px] text-slate-400">Bocina estridente de posesión agotada</div>
-                      </div>
-                    </div>
-                    <select
-                      value={soundOverrides.onShotClockExpired || 'default'}
-                      onChange={(e) => onSaveSoundOverrides({ ...soundOverrides, onShotClockExpired: e.target.value })}
-                      className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 font-bold outline-none"
-                    >
-                      <option value="default">Predeterminado (Buzzer Tablero LED)</option>
-                      {customSounds.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.icon} {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Gol / Canasta Local */}
-                  <div className="bg-slate-900/90 border border-slate-800 p-3 rounded-xl flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-base">⚽🏀</span>
-                      <div>
-                        <div className="font-bold text-blue-300">Anotación / Gol Equipo Local</div>
-                        <div className="text-[10px] text-slate-400">Sonido al sumar puntos para el equipo local</div>
-                      </div>
-                    </div>
-                    <select
-                      value={soundOverrides.onScoreLocal || 'default'}
-                      onChange={(e) => onSaveSoundOverrides({ ...soundOverrides, onScoreLocal: e.target.value })}
-                      className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 font-bold outline-none"
-                    >
-                      <option value="default">Predeterminado (Sirena Gol / Net Swish)</option>
-                      {customSounds.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.icon} {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Tiempo Muerto */}
-                  <div className="bg-slate-900/90 border border-slate-800 p-3 rounded-xl flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-base">⏸️</span>
-                      <div>
-                        <div className="font-bold text-purple-300">Solicitud de Tiempo Muerto (60s)</div>
-                        <div className="text-[10px] text-slate-400">Tono al iniciar el conteo de time-out reglamentario</div>
-                      </div>
-                    </div>
-                    <select
-                      value={soundOverrides.onTimeout || 'default'}
-                      onChange={(e) => onSaveSoundOverrides({ ...soundOverrides, onTimeout: e.target.value })}
-                      className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 font-bold outline-none"
-                    >
-                      <option value="default">Predeterminado (Doble Tono de Time-out)</option>
-                      {customSounds.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.icon} {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 5: PACKS, BACKUP & PRESETS */}
+          {/* ========================================================== */}
+          {/* 5. PACKS Y COPIAS */}
+          {/* ========================================================== */}
           {activeTab === 'pack' && (
-            <div className="space-y-4 max-w-2xl mx-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Exportar */}
-                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2.5 flex flex-col justify-between">
+                <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center space-x-2">
-                      <Download className="w-4 h-4 text-purple-400" />
-                      <h4 className="font-stadium font-bold text-white text-sm">EXPORTAR PACK DE SONIDOS</h4>
+                      <Download className="w-5 h-5 text-purple-400" />
+                      <h4 className="font-stadium font-bold text-white text-sm">EXPORTAR PACK Y PLANTILLAS</h4>
                     </div>
-                    <p className="text-slate-400 text-[11px] mt-1">
-                      Guarda todos tus sonidos en un archivo <code>.json</code> descargable para transferirlos a otra laptop del colegio.
+                    <p className="text-slate-400 text-xs mt-1">
+                      Descarga una copia completa en archivo <code>.json</code> con todas las plantillas y sonidos propios para transferir a otra PC.
                     </p>
                   </div>
 
                   <button
                     onClick={() => exportSoundPack(customSounds)}
-                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-stadium font-bold rounded-xl shadow"
+                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-stadium font-bold text-xs rounded-xl shadow"
                   >
-                    DESCARGAR BACKUP (.JSON)
+                    DESCARGAR RESPALDO (.JSON)
                   </button>
                 </div>
 
                 {/* Importar */}
-                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2.5 flex flex-col justify-between">
+                <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center space-x-2">
-                      <FolderPlus className="w-4 h-4 text-emerald-400" />
+                      <FolderPlus className="w-5 h-5 text-emerald-400" />
                       <h4 className="font-stadium font-bold text-white text-sm">IMPORTAR PACK</h4>
                     </div>
-                    <p className="text-slate-400 text-[11px] mt-1">
-                      Carga un archivo <code>.json</code> con una biblioteca de audios previamente exportada.
+                    <p className="text-slate-400 text-xs mt-1">
+                      Carga un archivo <code>.json</code> exportado previamente en otro marcador deportivo.
                     </p>
                   </div>
 
-                  <label className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-stadium font-bold rounded-xl shadow text-center cursor-pointer block">
+                  <label className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-stadium font-bold text-xs rounded-xl shadow text-center cursor-pointer block">
                     <span>SELECCIONAR ARCHIVO JSON</span>
                     <input
                       type="file"
@@ -940,7 +1177,7 @@ export const CustomSoundManagerModal: React.FC<Props> = ({
                           try {
                             const imported = await importSoundPack(file);
                             onSaveCustomSounds([...customSounds, ...imported]);
-                            setActiveTab('board');
+                            setActiveTab('custom_library');
                           } catch (err) {
                             console.error('Error al importar pack:', err);
                           }
@@ -951,17 +1188,21 @@ export const CustomSoundManagerModal: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* Cargar Muestras de Fábrica */}
+              {/* Muestras predeterminadas */}
               <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div>
                   <h4 className="font-stadium font-bold text-white text-sm">LIBRERÍA DE SONIDOS PREESTABLECIDOS</h4>
-                  <p className="text-slate-400 text-[11px] mt-0.5">
-                    Añade 6 efectos sintetizados listos para usar (Bocina náutica, Sirena, Fox 40, Ovación, Campana de Ring).
+                  <p className="text-slate-400 text-xs mt-0.5">
+                    Recarga los efectos sintetizados de muestra (Bocina de aire, Sirena, Fox 40, Ovación, Campana de Ring).
                   </p>
                 </div>
 
                 <button
-                  onClick={handleLoadFactoryPresets}
+                  onClick={() => {
+                    const presets = getDefaultPresetSounds();
+                    onSaveCustomSounds([...customSounds, ...presets]);
+                    setActiveTab('custom_library');
+                  }}
                   className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-stadium font-bold px-4 py-2 rounded-xl border border-slate-700"
                 >
                   CARGAR MUESTRAS
@@ -972,18 +1213,200 @@ export const CustomSoundManagerModal: React.FC<Props> = ({
 
         </div>
 
+        {/* MODAL SECUNDARIO: AÑADIR O EDITAR UN PAD EN EL DEPORTE */}
+        {isPadEditorOpen && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm animate-fade-in">
+            <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h4 className="font-stadium font-bold text-white text-sm flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-pink-400" />
+                  <span>{editingPadId ? 'MODIFICAR BOTÓN DE SONIDO' : 'NUEVO BOTÓN DE SONIDO'}</span>
+                  <span className="text-pink-400">({SPORTS_LIST.find((s) => s.id === selectedSport)?.name})</span>
+                </h4>
+                <button
+                  onClick={() => setIsPadEditorOpen(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                {/* Nombre del Botón */}
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">Nombre / Título del Botón:</label>
+                  <input
+                    type="text"
+                    value={padFormName}
+                    onChange={(e) => setPadFormName(e.target.value)}
+                    placeholder="Ej: Bocina NBA, ¡GOL!, Triple"
+                    className="w-full bg-slate-950 border border-slate-700 text-white px-3 py-2 rounded-xl focus:border-pink-500 text-xs"
+                  />
+                </div>
+
+                {/* Tipo de Sonido */}
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">Origen del Audio:</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPadFormType('builtin')}
+                      className={`p-2 rounded-xl border font-stadium font-bold transition ${
+                        padFormType === 'builtin'
+                          ? 'bg-cyan-600/30 border-cyan-500 text-cyan-200 ring-1 ring-cyan-400'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Sintetizado / Catálogo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPadFormType('custom')}
+                      className={`p-2 rounded-xl border font-stadium font-bold transition ${
+                        padFormType === 'custom'
+                          ? 'bg-pink-600/30 border-pink-500 text-pink-200 ring-1 ring-pink-400'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Audio Propio / Grabación
+                    </button>
+                  </div>
+                </div>
+
+                {/* Selector de Audio */}
+                {padFormType === 'builtin' ? (
+                  <div>
+                    <label className="text-slate-300 font-bold block mb-1">Seleccionar Sonido del Catálogo:</label>
+                    <select
+                      value={padFormBuiltinKey}
+                      onChange={(e) => {
+                        const key = e.target.value as BuiltinSoundKey;
+                        setPadFormBuiltinKey(key);
+                        const item = BUILTIN_SOUNDS_CATALOG.find((b) => b.key === key);
+                        if (item) {
+                          setPadFormIcon(item.defaultIcon);
+                          setPadFormColor(item.defaultColor);
+                          setPadFormArduinoCmd(item.defaultArduinoCmd);
+                        }
+                      }}
+                      className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-2 focus:border-pink-500"
+                    >
+                      {BUILTIN_SOUNDS_CATALOG.map((b) => (
+                        <option key={b.key} value={b.key}>
+                          {b.defaultIcon} {b.name} ({b.description})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-slate-300 font-bold block mb-1">Seleccionar de Mis Audios:</label>
+                    {customSounds.length === 0 ? (
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-slate-400 text-center">
+                        No tienes audios propios aún. Puedes subir un MP3 o grabar voz en las pestañas superiores.
+                      </div>
+                    ) : (
+                      <select
+                        value={padFormCustomId}
+                        onChange={(e) => setPadFormCustomId(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-2 focus:border-pink-500"
+                      >
+                        {customSounds.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.icon || '🎵'} {c.name} ({c.duration || '0'}s)
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
+
+                {/* Icono y Color */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-300 font-bold block mb-1">Icono / Emoji:</label>
+                    <div className="flex flex-wrap gap-1 bg-slate-950 p-2 rounded-xl border border-slate-800 max-h-24 overflow-y-auto">
+                      {EMOJI_PRESETS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => setPadFormIcon(emoji)}
+                          className={`w-7 h-7 rounded-lg text-base flex items-center justify-center ${
+                            padFormIcon === emoji ? 'bg-pink-600 scale-110 shadow' : 'hover:bg-slate-800'
+                          }`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-300 font-bold block mb-1">Color del Botón:</label>
+                    <div className="flex flex-wrap gap-1.5 bg-slate-950 p-2 rounded-xl border border-slate-800 max-h-24 overflow-y-auto">
+                      {COLOR_PRESETS.map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => setPadFormColor(color)}
+                          className={`w-7 h-7 rounded-lg transition ${
+                            padFormColor === color ? 'ring-2 ring-white scale-110 shadow' : 'opacity-80 hover:opacity-100'
+                          }`}
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Comando Arduino */}
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">Comando Serie Arduino (Opcional):</label>
+                  <input
+                    type="text"
+                    value={padFormArduinoCmd}
+                    onChange={(e) => setPadFormArduinoCmd(e.target.value)}
+                    placeholder="Ej: CMD:HORN, CMD:SND:GOAL"
+                    className="w-full bg-slate-950 border border-slate-700 text-white px-3 py-2 rounded-xl focus:border-pink-500 font-mono-code text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Botones de guardar */}
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsPadEditorOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-stadium font-bold rounded-xl text-xs"
+                >
+                  CANCELAR
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSavePad}
+                  className="px-5 py-2 bg-pink-600 hover:bg-pink-500 text-white font-stadium font-bold rounded-xl text-xs shadow-lg"
+                >
+                  GUARDAR EN {SPORTS_LIST.find((s) => s.id === selectedSport)?.name.toUpperCase()}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* FOOTER */}
-        <div className="bg-slate-950 px-5 py-3 border-t border-slate-800 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-2 font-mono-code">
-          <div className="flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>Total de audios propios: <b>{customSounds.length}</b></span>
+        <div className="bg-slate-950 px-4 sm:px-6 py-3 border-t border-slate-800 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-2 font-mono-code">
+          <div className="flex items-center space-x-3">
+            <span className="flex items-center gap-1.5 text-emerald-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              Pads de {SPORTS_LIST.find((s) => s.id === selectedSport)?.name}: <b>{currentTemplate.pads.length}</b>
+            </span>
           </div>
 
           <button
             onClick={onClose}
-            className="bg-slate-800 hover:bg-slate-700 text-white font-stadium font-bold px-4 py-1.5 rounded-xl"
+            className="bg-slate-800 hover:bg-slate-700 text-white font-stadium font-bold px-5 py-1.5 rounded-xl transition"
           >
-            CERRAR
+            GUARDAR Y CERRAR
           </button>
         </div>
 

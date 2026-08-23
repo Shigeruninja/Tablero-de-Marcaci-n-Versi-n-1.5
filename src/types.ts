@@ -144,14 +144,70 @@ export interface CustomSoundItem {
 }
 
 export interface SoundEventOverrides {
-  onPeriodEndHorn?: string; // ID del sonido personalizado o 'default'
+  onPeriodEndHorn?: string; // ID del sonido personalizado o 'default' o builtin key
   onShotClockExpired?: string; // ID del sonido personalizado o 'default'
   onScoreLocal?: string; // ID de sonido o 'default'
   onScoreVisitor?: string; // ID de sonido o 'default'
   onGoal?: string; // ID de sonido o 'default'
   onTimeout?: string; // ID de sonido o 'default'
   onCard?: string; // ID de sonido o 'default'
+  onTwoMinPenalty?: string; // ID de sonido o 'default'
+  onSetPoint?: string; // ID de sonido o 'default'
 }
+
+export type BuiltinSoundKey = 
+  | 'playHorn'
+  | 'playShotClockViolation'
+  | 'playShotClockWarning'
+  | 'playDefenseChant'
+  | 'playChargeFanfare'
+  | 'playTripleBasket'
+  | 'playBasketScore'
+  | 'playWhistle'
+  | 'playDoubleWhistle'
+  | 'playSoccerMatchWhistle'
+  | 'playTimeoutHorn'
+  | 'playTimeoutWarning'
+  | 'playGoalHorn'
+  | 'playOleChant'
+  | 'playDoblePenal'
+  | 'playCardAlarm'
+  | 'playMassApplause'
+  | 'playSetPoint'
+  | 'playSpikeAce'
+  | 'playServeWhistle'
+  | 'playRotationBeep'
+  | 'playHandballGoal'
+  | 'playTwoMinSuspension'
+  | 'playPassivePlay'
+  | 'playBoxingBell'
+  | 'playGong'
+  | 'playCountdown'
+  | 'playBeep'
+  | 'playClick';
+
+export interface SportSoundPad {
+  id: string;
+  name: string;
+  soundType: 'builtin' | 'custom';
+  builtinKey?: BuiltinSoundKey;
+  customSoundId?: string; // ID de CustomSoundItem
+  icon?: string;
+  color?: string;
+  volume?: number;
+  arduinoCmd?: string;
+}
+
+export interface SportSoundTemplate {
+  sport: SportType;
+  displayName: string;
+  icon: string;
+  description: string;
+  pads: SportSoundPad[];
+  overrides: SoundEventOverrides;
+}
+
+export type SportSoundTemplates = Record<SportType, SportSoundTemplate>;
 
 export interface ShortcutDefinition {
   id: ShortcutActionId;

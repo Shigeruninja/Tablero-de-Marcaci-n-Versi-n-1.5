@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   ScoreboardState, AppMode, SportType, LogEntry, ConnectionType, 
-  KeyboardShortcutsMap, ShortcutActionId, ClockColor, CustomSoundItem, SoundEventOverrides 
+  KeyboardShortcutsMap, ShortcutActionId, ClockColor, CustomSoundItem, SoundEventOverrides,
+  SportSoundTemplates 
 } from './types';
 import { hardware } from './utils/hardwareManager';
 import { sounds } from './utils/audio';
@@ -17,6 +18,11 @@ import {
   getStoredSoundOverrides, 
   saveStoredSoundOverrides 
 } from './utils/customSoundManager';
+import { 
+  getStoredSportTemplates, 
+  saveStoredSportTemplates, 
+  BUILTIN_SOUNDS_CATALOG 
+} from './utils/sportSoundTemplates';
 import { VirtualLedSignPreview } from './components/VirtualLedSignPreview';
 import { ScoreboardPanel } from './components/ScoreboardPanel';
 import { ClockPanel } from './components/ClockPanel';
@@ -106,9 +112,11 @@ export default function App() {
   const [isKeyConfigModalOpen, setIsKeyConfigModalOpen] = useState(false);
   const [isCustomSoundModalOpen, setIsCustomSoundModalOpen] = useState(false);
   
-  // Sonidos Propios y Mapeo de Eventos
+  // Sonidos Propios, Plantillas por Deporte y Mapeo de Eventos
   const [customSounds, setCustomSounds] = useState<CustomSoundItem[]>(getStoredCustomSounds());
+  const [sportTemplates, setSportTemplates] = useState<SportSoundTemplates>(getStoredSportTemplates());
   const [soundOverrides, setSoundOverrides] = useState<SoundEventOverrides>(getStoredSoundOverrides());
+  const [activeSoundModalSport, setActiveSoundModalSport] = useState<SportType>('basketball');
 
   const [shortcuts, setShortcuts] = useState<KeyboardShortcutsMap>(getStoredShortcuts());
   const [keyboardShortcutsEnabled, setKeyboardShortcutsEnabled] = useState<boolean>(getStoredShortcutsEnabled());
@@ -128,21 +136,55 @@ export default function App() {
     saveStoredCustomSounds(updated);
   };
 
-  // Guardar Mapeo de Eventos
+  // Guardar Plantillas de Sonido por Deporte
+  const handleSaveSportTemplates = (updated: SportSoundTemplates) => {
+    setSportTemplates(updated);
+    saveStoredSportTemplates(updated);
+  };
+
+  // Guardar Mapeo Global de Eventos
   const handleSaveSoundOverrides = (updated: SoundEventOverrides) => {
     setSoundOverrides(updated);
     saveStoredSoundOverrides(updated);
   };
 
-  // Helper para disparar sonido de evento (propio si está mapeado o predeterminado)
+  // Abrir Administrador de Sonidos para un Deporte Específico o General
+  const handleOpenCustomSoundManager = (sport?: SportType) => {
+    if (sport) {
+      setActiveSoundModalSport(sport === 'custom' ? 'training' : sport);
+    } else {
+      setActiveSoundModalSport(state.sport === 'custom' ? 'training' : state.sport);
+    }
+    setIsCustomSoundModalOpen(true);
+  };
+
+  // Helper para disparar sonido de evento (propio o builtin si está mapeado en la plantilla del deporte o predeterminado)
   const triggerEventSound = (
     eventId: keyof SoundEventOverrides,
     defaultSoundFn: () => void,
     arduinoFallbackCmd?: string
   ) => {
     if (!state.soundEnabled) return;
-    const overrideId = soundOverrides[eventId];
+    
+    // 1. Revisar override específico de la plantilla del deporte actual
+    const currentSport = state.sport === 'custom' ? 'training' : state.sport;
+    const sportTpl = sportTemplates[currentSport];
+    const overrideId = sportTpl?.overrides?.[eventId] || soundOverrides[eventId];
+
     if (overrideId && overrideId !== 'default') {
+      // Si es un sonido del catálogo integrado
+      const builtinItem = BUILTIN_SOUNDS_CATALOG.find((b) => b.key === overrideId);
+      if (builtinItem) {
+        builtinItem.play(sounds);
+        if (builtinItem.defaultArduinoCmd) {
+          hardware.sendCommand(builtinItem.defaultArduinoCmd);
+        } else if (arduinoFallbackCmd) {
+          hardware.sendCommand(arduinoFallbackCmd);
+        }
+        return;
+      }
+
+      // Si es un sonido personalizado subido/grabado por el usuario
       const custom = customSounds.find((s) => s.id === overrideId);
       if (custom) {
         sounds.playCustomSound(custom.id, custom.audioData, custom.volume || 1.0, custom.loop || false);
@@ -154,6 +196,7 @@ export default function App() {
         return;
       }
     }
+
     defaultSoundFn();
     if (arduinoFallbackCmd) hardware.sendCommand(arduinoFallbackCmd);
   };
@@ -909,14 +952,14 @@ export default function App() {
               <span className="hidden sm:inline">MACROS PC</span>
             </button>
 
-            {/* Botón Acceso Sonidos Propios y Voces */}
+            {/* Botón Acceso Sonidos Propios y Plantillas por Deporte */}
             <button
-              onClick={() => setIsCustomSoundModalOpen(true)}
+              onClick={() => handleOpenCustomSoundManager()}
               className="px-3 py-2 rounded-xl border flex items-center space-x-1.5 transition font-stadium font-bold text-xs bg-pink-500/15 border-pink-500/40 text-pink-300 hover:bg-pink-500/25 shadow-md"
-              title="Cargar MP3 propios, grabar audios del estadio y personalizar eventos"
+              title="Administrar plantillas por deporte, cargar MP3 y grabar audios"
             >
-              <Music className="w-4 h-4 text-pink-400" />
-              <span className="hidden lg:inline">SONIDOS PROPIOS ({customSounds.length})</span>
+              <Sliders className="w-4 h-4 text-pink-400" />
+              <span className="hidden lg:inline">SONIDOS & PLANTILLAS</span>
             </button>
 
             {/* Botón Rápido Descarga e Instalación (Win11 / Android) */}
@@ -1094,8 +1137,9 @@ export default function App() {
             onSetSport={handleSetSport}
             onOpenKeyConfig={() => setIsKeyConfigModalOpen(true)}
             customSounds={customSounds}
+            sportTemplates={sportTemplates}
             soundOverrides={soundOverrides}
-            onOpenCustomSoundManager={() => setIsCustomSoundModalOpen(true)}
+            onOpenCustomSoundManager={handleOpenCustomSoundManager}
           />
         )}
 
@@ -1153,14 +1197,18 @@ export default function App() {
         onToggleEnabled={handleToggleShortcutsEnabled}
       />
 
-      {/* MODAL DE GESTIÓN DE SONIDOS PROPIOS, MP3 Y VOCES */}
+      {/* MODAL DE GESTIÓN DE SONIDOS PROPIOS, BOTONERAS POR DEPORTE Y MP3 */}
       <CustomSoundManagerModal
         isOpen={isCustomSoundModalOpen}
         onClose={() => setIsCustomSoundModalOpen(false)}
-        soundsList={customSounds}
-        onSaveSounds={handleSaveCustomSounds}
+        initialSport={activeSoundModalSport}
+        customSounds={customSounds}
+        onSaveCustomSounds={handleSaveCustomSounds}
+        sportTemplates={sportTemplates}
+        onSaveSportTemplates={handleSaveSportTemplates}
         soundOverrides={soundOverrides}
-        onSaveOverrides={handleSaveSoundOverrides}
+        onSaveSoundOverrides={handleSaveSoundOverrides}
+        soundEnabled={state.soundEnabled}
       />
 
       {/* MODAL DE CONEXIÓN HARDWARE */}
