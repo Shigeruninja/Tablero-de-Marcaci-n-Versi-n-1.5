@@ -1110,6 +1110,152 @@ class StadiumSoundEngine {
     }
   }
 
+  // ==========================================
+  // 6. REPRODUCTOR DE AUDIO PROPIO / PERSONALIZADO
+  // ==========================================
+  private audioBufferCache = new Map<string, AudioBuffer>();
+  private activeCustomSources = new Map<string, { stop: () => void }>();
+
+  // Pre-decodificar y almacenar en caché el audio para reproducción con latencia CERO
+  async preloadCustomAudio(id: string, dataUrl: string): Promise<AudioBuffer | null> {
+    if (this.audioBufferCache.has(id)) {
+      return this.audioBufferCache.get(id) || null;
+    }
+
+    try {
+      const ctx = this.initContext();
+      if (!ctx) return null;
+
+      // Convertir dataURL / base64 a ArrayBuffer
+      const res = await fetch(dataUrl);
+      const arrayBuffer = await res.arrayBuffer();
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+      this.audioBufferCache.set(id, audioBuffer);
+      return audioBuffer;
+    } catch (e) {
+      console.warn(`No se pudo decodificar audio Web Audio API para ${id}, usando fallback HTMLAudio`, e);
+      return null;
+    }
+  }
+
+  // Reproducir un sonido propio cargado por el usuario
+  async playCustomSound(
+    id: string,
+    dataUrl: string,
+    volume = 1.0,
+    loop = false,
+    onEnded?: () => void
+  ): Promise<boolean> {
+    try {
+      const ctx = this.initContext();
+      
+      // Detener si ya estaba sonando esta instancia
+      this.stopCustomSound(id);
+
+      // Intento 1: Web Audio API (Latencia 0ms)
+      if (ctx) {
+        let buffer = this.audioBufferCache.get(id);
+        if (!buffer) {
+          buffer = (await this.preloadCustomAudio(id, dataUrl)) || undefined;
+        }
+
+        if (buffer) {
+          const source = ctx.createBufferSource();
+          const gainNode = ctx.createGain();
+          
+          source.buffer = buffer;
+          source.loop = loop;
+          gainNode.gain.setValueAtTime(Math.max(0, Math.min(1, volume)), ctx.currentTime);
+
+          source.connect(gainNode);
+          gainNode.connect(ctx.destination);
+
+          source.onended = () => {
+            this.activeCustomSources.delete(id);
+            if (onEnded) onEnded();
+          };
+
+          source.start(0);
+
+          this.activeCustomSources.set(id, {
+            stop: () => {
+              try {
+                source.stop();
+                source.disconnect();
+              } catch {
+                // Ignore
+              }
+              this.activeCustomSources.delete(id);
+            }
+          });
+
+          return true;
+        }
+      }
+
+      // Intento 2: Fallback con HTML5 Audio Element
+      const audio = new Audio(dataUrl);
+      audio.volume = Math.max(0, Math.min(1, volume));
+      audio.loop = loop;
+
+      audio.onended = () => {
+        this.activeCustomSources.delete(id);
+        if (onEnded) onEnded();
+      };
+
+      await audio.play();
+
+      this.activeCustomSources.set(id, {
+        stop: () => {
+          try {
+            audio.pause();
+            audio.currentTime = 0;
+          } catch {
+            // Ignore
+          }
+          this.activeCustomSources.delete(id);
+        }
+      });
+
+      return true;
+    } catch (e) {
+      console.error('Error al reproducir sonido personalizado:', e);
+      return false;
+    }
+  }
+
+  // Detener un sonido personalizado específico
+  stopCustomSound(id: string) {
+    const active = this.activeCustomSources.get(id);
+    if (active) {
+      active.stop();
+      this.activeCustomSources.delete(id);
+    }
+  }
+
+  // Comprobar si un sonido está reproduciéndose
+  isCustomSoundPlaying(id: string): boolean {
+    return this.activeCustomSources.has(id);
+  }
+
+  // Detener TODOS los sonidos activos (propios y de estadio)
+  stopAllSounds() {
+    this.activeCustomSources.forEach((source) => {
+      try {
+        source.stop();
+      } catch {
+        // Ignore
+      }
+    });
+    this.activeCustomSources.clear();
+  }
+
+  // Limpiar caché de sonido eliminado
+  removeCustomSoundCache(id: string) {
+    this.stopCustomSound(id);
+    this.audioBufferCache.delete(id);
+  }
+
   // Alias para silbato de árbitro y compatibilidad
   playRefereeWhistle() {
     this.playWhistle();

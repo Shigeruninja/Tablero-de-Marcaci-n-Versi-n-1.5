@@ -427,6 +427,13 @@ void procesarComando(char* cmd) {
       lc.setIntensity(i, brillo);
     }
   }
+
+  // Cambio de Color Reloj RTC (CLKCLR:CYAN/GREEN/AMBER/RED/BLUE/PURPLE/WHITE/LIME)
+  else if (strncmp(cmd, "CLKCLR:", 7) == 0) {
+    // Comando para matrices LED RGB (WS2812B / P10 Full Color)
+    Serial.print(F("ACK:CLOCK_COLOR:"));
+    Serial.println(cmd + 7);
+  }
 }
 
 // --- ACTUALIZACIÓN DE DISPLAYS FÍSICOS (MAX7219) ---

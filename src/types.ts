@@ -1,6 +1,8 @@
-export type AppMode = 'scoreboard' | 'clock' | 'banner' | 'manual' | 'audit' | 'arduino_code';
+export type AppMode = 'scoreboard' | 'clock' | 'banner' | 'manual' | 'audit' | 'arduino_code' | 'downloads';
 
 export type TimerDirection = 'down' | 'up';
+
+export type ClockColor = 'cyan' | 'green' | 'amber' | 'red' | 'blue' | 'purple' | 'white' | 'lime';
 
 export type SportType = 'basketball' | 'volleyball' | 'futsal' | 'handball' | 'soccer' | 'custom';
 
@@ -77,6 +79,7 @@ export interface ScoreboardState {
   
   // Reloj RTC
   autoSyncRtc: boolean;
+  clockColor: ClockColor;
   
   // Conexión
   connectionType: ConnectionType;
@@ -120,6 +123,35 @@ export type ShortcutActionId =
   | 'goal_sound_trigger'
   // Periodo / Set
   | 'next_period';
+
+export type SoundCategory = 'horn' | 'goal' | 'whistle' | 'cheer' | 'music' | 'announcement' | 'fanfare' | 'custom';
+
+export interface CustomSoundItem {
+  id: string;
+  name: string;
+  category: SoundCategory;
+  audioData: string; // Base64 data URL o Data URI (audio/mp3, audio/wav, audio/ogg, audio/webm, etc.)
+  duration?: number; // Duración en segundos
+  fileName?: string;
+  fileSize?: number; // Bytes
+  icon?: string; // Emoji decorativo
+  color?: string; // Color HEX para el pad
+  volume?: number; // 0.1 a 1.0 (default 1.0)
+  loop?: boolean;
+  shortcutKey?: string; // Tecla rápida personalizada (ej: '1', '2', 'F5')
+  arduinoCmd?: string; // Comando serie opcional para Arduino
+  createdAt: number;
+}
+
+export interface SoundEventOverrides {
+  onPeriodEndHorn?: string; // ID del sonido personalizado o 'default'
+  onShotClockExpired?: string; // ID del sonido personalizado o 'default'
+  onScoreLocal?: string; // ID de sonido o 'default'
+  onScoreVisitor?: string; // ID de sonido o 'default'
+  onGoal?: string; // ID de sonido o 'default'
+  onTimeout?: string; // ID de sonido o 'default'
+  onCard?: string; // ID de sonido o 'default'
+}
 
 export interface ShortcutDefinition {
   id: ShortcutActionId;

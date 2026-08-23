@@ -1,6 +1,6 @@
 {
   "name": "Controlador Tablero Deportivo Arduino",
   "description": "Aplicación de control y enlace para cartel luminoso LED y tablero de gimnasio escolar con Arduino y ESP32 (Web Serial, Bluetooth BLE y WiFi)",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

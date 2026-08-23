@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { ScoreboardState, SportType } from '../types';
+import { ScoreboardState, SportType, CustomSoundItem, SoundEventOverrides } from '../types';
 import { sounds } from '../utils/audio';
 import { hardware } from '../utils/hardwareManager';
 import { 
   Play, Pause, RotateCcw, Volume2, Plus, Minus, ArrowLeftRight, 
   Flame, Award, Music, Clock, Timer, Check, Edit2, Sparkles,
-  ShieldAlert, AlertTriangle, UserCheck, RefreshCw, Flag, Keyboard
+  ShieldAlert, AlertTriangle, UserCheck, RefreshCw, Flag, Keyboard,
+  Upload, Mic, Settings2, Sliders, Square
 } from 'lucide-react';
 
 interface Props {
@@ -22,6 +23,9 @@ interface Props {
   onResetShotClock: (seconds: number) => void;
   onSetSport: (sport: SportType) => void;
   onOpenKeyConfig?: () => void;
+  customSounds?: CustomSoundItem[];
+  soundOverrides?: SoundEventOverrides;
+  onOpenCustomSoundManager?: () => void;
 }
 
 export const ScoreboardPanel: React.FC<Props> = ({
@@ -37,14 +41,18 @@ export const ScoreboardPanel: React.FC<Props> = ({
   onResetShotClock,
   onSetSport,
   onOpenKeyConfig,
+  customSounds = [],
+  soundOverrides,
+  onOpenCustomSoundManager,
 }) => {
   // Estado para edición manual directa de minutos y segundos
   const [isEditingTime, setIsEditingTime] = useState(false);
   const [editMinutes, setEditMinutes] = useState('10');
   const [editSeconds, setEditSeconds] = useState('00');
+  const [playingCustomId, setPlayingCustomId] = useState<string | null>(null);
 
   // Pestaña activa del panel de sonidos
-  const [activeSoundTab, setActiveSoundTab] = useState<'current' | 'soccer' | 'basketball' | 'futsal' | 'volleyball' | 'handball' | 'training'>('current');
+  const [activeSoundTab, setActiveSoundTab] = useState<'current' | 'custom' | 'soccer' | 'basketball' | 'futsal' | 'volleyball' | 'handball' | 'training'>('current');
 
   const currentMinutes = Math.floor(Math.max(0, state.timerSeconds) / 60);
   const currentSeconds = Math.max(0, state.timerSeconds) % 60;
@@ -645,6 +653,16 @@ export const ScoreboardPanel: React.FC<Props> = ({
               <span>Deporte Actual</span>
             </button>
             <button
+              onClick={() => setActiveSoundTab('custom')}
+              className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap flex items-center gap-1 border ${
+                activeSoundTab === 'custom'
+                  ? 'bg-pink-600 text-white shadow border-pink-400/50'
+                  : 'bg-slate-800 text-pink-400 border-pink-500/30 hover:bg-slate-700 hover:text-pink-300'
+              }`}
+            >
+              <span>🎧 Mis Sonidos ({customSounds.length})</span>
+            </button>
+            <button
               onClick={() => setActiveSoundTab('soccer')}
               className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap ${
                 activeSoundTab === 'soccer'
@@ -694,8 +712,102 @@ export const ScoreboardPanel: React.FC<Props> = ({
             >
               🤾 Handball
             </button>
+
+            {onOpenCustomSoundManager && (
+              <button
+                onClick={onOpenCustomSoundManager}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1 border border-slate-700 whitespace-nowrap"
+                title="Administrar, cargar MP3 y grabar audios propios"
+              >
+                <Sliders className="w-3 h-3 text-purple-400" />
+                <span className="hidden sm:inline">Administrar Sonidos</span>
+              </button>
+            )}
           </div>
         </div>
+
+        {/* TAB MIS SONIDOS PROPIOS */}
+        {activeSoundTab === 'custom' && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/60 p-2 rounded-xl border border-slate-800">
+              <span className="text-xs text-slate-300 font-bold flex items-center gap-1.5 font-stadium">
+                <Music className="w-3.5 h-3.5 text-pink-400" />
+                Pads de Sonidos Personalizados y Voces del Gimnasio
+              </span>
+              {onOpenCustomSoundManager && (
+                <button
+                  onClick={onOpenCustomSoundManager}
+                  className="bg-pink-600 hover:bg-pink-500 text-white font-stadium font-bold text-xs px-3 py-1 rounded-lg flex items-center gap-1.5 shadow"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ CARGAR / GRABAR SONIDO</span>
+                </button>
+              )}
+            </div>
+
+            {customSounds.length === 0 ? (
+              <div className="text-center py-6 bg-slate-950/40 rounded-xl border border-slate-800 p-4 space-y-2">
+                <p className="text-xs text-slate-400">No tienes sonidos personalizados cargados todavía.</p>
+                {onOpenCustomSoundManager && (
+                  <button
+                    onClick={onOpenCustomSoundManager}
+                    className="bg-purple-600 hover:bg-purple-500 text-white font-stadium font-bold text-xs px-4 py-2 rounded-xl shadow"
+                  >
+                    Abrir Administrador de Sonidos
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                {customSounds.map((sound) => {
+                  const isPlaying = playingCustomId === sound.id;
+                  const padColor = sound.color || '#ec4899';
+                  return (
+                    <button
+                      key={sound.id}
+                      onClick={() => {
+                        if (isPlaying) {
+                          sounds.stopCustomSound(sound.id);
+                          setPlayingCustomId(null);
+                        } else {
+                          sounds.stopAllSounds();
+                          setPlayingCustomId(sound.id);
+                          sounds.playCustomSound(
+                            sound.id, 
+                            sound.audioData, 
+                            sound.volume || 1.0, 
+                            sound.loop || false,
+                            () => setPlayingCustomId((curr) => curr === sound.id ? null : curr)
+                          );
+                          if (sound.arduinoCmd) {
+                            hardware.sendCommand(sound.arduinoCmd);
+                          } else {
+                            hardware.sendCommand(`CMD:SND:CUSTOM:${sound.name.substring(0, 8).toUpperCase()}`);
+                          }
+                        }
+                      }}
+                      className={`font-stadium font-bold text-xs p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg transition border text-white active:scale-95 relative ${
+                        isPlaying
+                          ? 'border-white ring-2 ring-white/50 animate-pulse bg-rose-600'
+                          : 'hover:opacity-90 border-slate-700'
+                      }`}
+                      style={{
+                        backgroundColor: isPlaying ? '#e11d48' : padColor,
+                      }}
+                      title={`Reproducir ${sound.name} (${sound.duration || 'Audio'}s)`}
+                    >
+                      <span className="text-lg">{isPlaying ? '⏹️' : (sound.icon || '🎵')}</span>
+                      <span className="truncate max-w-full text-center">{sound.name}</span>
+                      {sound.duration && (
+                        <span className="text-[9px] opacity-75 font-mono-code">{sound.duration}s</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 1. PALETA DE FÚTBOL TRADICIONAL */}
         {effectiveSoundCategory === 'soccer' && (

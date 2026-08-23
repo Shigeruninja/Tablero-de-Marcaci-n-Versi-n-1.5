@@ -318,6 +318,14 @@ export class HardwareManager {
         setTimeout(() => {
           this.log({ type: 'rx', message: `ACK:${cleanCmd}`, source: 'SIM-ARDUINO' });
         }, 35);
+      } else if (cleanCmd.startsWith('CLKCLR:')) {
+        setTimeout(() => {
+          this.log({ type: 'rx', message: `ACK:CLOCK_COLOR:${cleanCmd.substring(7)}`, source: 'SIM-ARDUINO' });
+        }, 30);
+      } else if (cleanCmd.startsWith('CLK:')) {
+        setTimeout(() => {
+          this.log({ type: 'rx', message: 'ACK:RTC_SINCRONIZADO', source: 'SIM-ARDUINO' });
+        }, 30);
       }
       return true;
     }

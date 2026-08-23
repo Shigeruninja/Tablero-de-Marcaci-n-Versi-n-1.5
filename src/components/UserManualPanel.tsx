@@ -18,7 +18,8 @@ import {
   Search,
   Download,
   Share2,
-  Laptop
+  Laptop,
+  Smartphone
 } from 'lucide-react';
 import { sounds } from '../utils/audio';
 
@@ -43,7 +44,7 @@ export const UserManualPanel: React.FC = () => {
     { id: 'macros', label: '6. Macros de Teclado PC', icon: Keyboard },
     { id: 'audio', label: '7. Chicharras y Bocina', icon: Volume2 },
     { id: 'protocol', label: '8. Protocolo Serie ASCII', icon: Terminal },
-    { id: 'windows11', label: '9. Instalación en Windows 11 (Notebook)', icon: Laptop },
+    { id: 'windows11', label: '9. Instalación en Windows 11 y Android', icon: Laptop },
     { id: 'faq', label: '10. Preguntas Frecuentes y Soluciones', icon: HelpCircle },
   ];
 
@@ -536,17 +537,26 @@ Consulte el archivo /MANUAL_DE_USUARIO.md para el documento completo.`;
                 </div>
               </div>
 
-              {/* OPCIÓN 3 */}
-              <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2">
+              {/* OPCIÓN ANDROID */}
+              <div className="bg-slate-900 p-4 rounded-xl border border-emerald-500/30 space-y-2">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-white text-xs flex items-center gap-2">
-                    <span className="bg-purple-500 text-white px-2 py-0.5 rounded font-black text-[10px]">MÉTODO 3</span>
-                    <span>Empaquetado como Ejecutable .EXE (Electron / Tauri)</span>
+                  <h4 className="font-bold text-emerald-300 text-xs flex items-center gap-2">
+                    <span className="bg-emerald-500 text-slate-950 px-2 py-0.5 rounded font-black text-[10px]">MÉTODO 4 (ANDROID)</span>
+                    <span>Instalación en Smartphones y Tablets Android</span>
                   </h4>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/40 font-bold">
+                    WebAPK / Pantalla de Inicio
+                  </span>
                 </div>
-                <p className="text-xs text-slate-400">
-                  Para distribuir un instalador standalone <code>.exe</code> o <code>.msi</code> a árbitros sin navegador, se puede envolver la carpeta <code>dist/</code> con <b>Electron Forge</b> o <b>Tauri</b> en menos de 2 minutos.
+                <p className="text-xs text-slate-300">
+                  Para utilizar el tablero en la cancha desde un teléfono o tablet Android:
                 </p>
+                <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-300 pt-1">
+                  <li>Abra la URL de la aplicación en <b>Google Chrome</b> en su dispositivo Android (o escanee el código QR en la pestaña <i>DESCARGAS & APP</i>).</li>
+                  <li>Toque el menú de opciones <kbd className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-700 text-[10px]">⋮</kbd> arriba a la derecha.</li>
+                  <li>Seleccione <b>"Agregar a la pantalla principal"</b> o <b>"Instalar aplicación"</b>.</li>
+                  <li>Se creará el ícono en su pantalla de inicio y se ejecutará en modo pantalla completa sin barra de navegación.</li>
+                </ol>
               </div>
 
             </div>

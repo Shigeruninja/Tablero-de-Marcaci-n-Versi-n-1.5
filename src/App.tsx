@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ScoreboardState, AppMode, SportType, LogEntry, ConnectionType, KeyboardShortcutsMap, ShortcutActionId } from './types';
+import { 
+  ScoreboardState, AppMode, SportType, LogEntry, ConnectionType, 
+  KeyboardShortcutsMap, ShortcutActionId, ClockColor, CustomSoundItem, SoundEventOverrides 
+} from './types';
 import { hardware } from './utils/hardwareManager';
 import { sounds } from './utils/audio';
 import { 
@@ -8,6 +11,12 @@ import {
   saveStoredShortcuts, 
   saveStoredShortcutsEnabled 
 } from './utils/keyboardManager';
+import { 
+  getStoredCustomSounds, 
+  saveStoredCustomSounds, 
+  getStoredSoundOverrides, 
+  saveStoredSoundOverrides 
+} from './utils/customSoundManager';
 import { VirtualLedSignPreview } from './components/VirtualLedSignPreview';
 import { ScoreboardPanel } from './components/ScoreboardPanel';
 import { ClockPanel } from './components/ClockPanel';
@@ -19,9 +28,12 @@ import { ConnectionModal } from './components/ConnectionModal';
 import { KeyboardConfigModal } from './components/KeyboardConfigModal';
 import { KeyboardHudOverlay } from './components/KeyboardHudOverlay';
 import { UserManualPanel } from './components/UserManualPanel';
+import { AppDownloadPanel } from './components/AppDownloadPanel';
+import { CustomSoundManagerModal } from './components/CustomSoundManagerModal';
 import { 
   Trophy, Clock, MessageSquare, ShieldCheck, Cpu, Volume2, VolumeX, 
-  Wifi, Bluetooth, Usb, Radio, Sparkles, Keyboard, BookOpen
+  Wifi, Bluetooth, Usb, Radio, Sparkles, Keyboard, BookOpen, Download,
+  Laptop, Smartphone, Music, Sliders
 } from 'lucide-react';
 
 export default function App() {
@@ -73,6 +85,7 @@ export default function App() {
     brightness: 80,
     bannerAnimation: 'scroll',
     autoSyncRtc: true,
+    clockColor: 'cyan',
     connectionType: 'simulation',
     connectionLabel: 'Simulador Arduino Activo',
     baudRate: 9600,
@@ -91,6 +104,12 @@ export default function App() {
 
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isKeyConfigModalOpen, setIsKeyConfigModalOpen] = useState(false);
+  const [isCustomSoundModalOpen, setIsCustomSoundModalOpen] = useState(false);
+  
+  // Sonidos Propios y Mapeo de Eventos
+  const [customSounds, setCustomSounds] = useState<CustomSoundItem[]>(getStoredCustomSounds());
+  const [soundOverrides, setSoundOverrides] = useState<SoundEventOverrides>(getStoredSoundOverrides());
+
   const [shortcuts, setShortcuts] = useState<KeyboardShortcutsMap>(getStoredShortcuts());
   const [keyboardShortcutsEnabled, setKeyboardShortcutsEnabled] = useState<boolean>(getStoredShortcutsEnabled());
   const [lastTriggeredAction, setLastTriggeredAction] = useState<string | null>(null);
@@ -102,6 +121,42 @@ export default function App() {
     seconds: '00',
     date: '--/--/----'
   });
+
+  // Guardar Sonidos Propios
+  const handleSaveCustomSounds = (updated: CustomSoundItem[]) => {
+    setCustomSounds(updated);
+    saveStoredCustomSounds(updated);
+  };
+
+  // Guardar Mapeo de Eventos
+  const handleSaveSoundOverrides = (updated: SoundEventOverrides) => {
+    setSoundOverrides(updated);
+    saveStoredSoundOverrides(updated);
+  };
+
+  // Helper para disparar sonido de evento (propio si está mapeado o predeterminado)
+  const triggerEventSound = (
+    eventId: keyof SoundEventOverrides,
+    defaultSoundFn: () => void,
+    arduinoFallbackCmd?: string
+  ) => {
+    if (!state.soundEnabled) return;
+    const overrideId = soundOverrides[eventId];
+    if (overrideId && overrideId !== 'default') {
+      const custom = customSounds.find((s) => s.id === overrideId);
+      if (custom) {
+        sounds.playCustomSound(custom.id, custom.audioData, custom.volume || 1.0, custom.loop || false);
+        if (custom.arduinoCmd) {
+          hardware.sendCommand(custom.arduinoCmd);
+        } else if (arduinoFallbackCmd) {
+          hardware.sendCommand(arduinoFallbackCmd);
+        }
+        return;
+      }
+    }
+    defaultSoundFn();
+    if (arduinoFallbackCmd) hardware.sendCommand(arduinoFallbackCmd);
+  };
 
   // Helper para añadir logs
   const addLog = useCallback((entry: Omit<LogEntry, 'id' | 'timestamp'>) => {
@@ -434,6 +489,11 @@ export default function App() {
       if (team === 'local') {
         const val = Math.max(0, Math.min(99, prev.scoreLocal + delta));
         hardware.sendCommand(`L:${val}`);
+        if (delta > 0) {
+          triggerEventSound('onScoreLocal', () => {
+            if (prev.sport === 'soccer' || prev.sport === 'futsal') sounds.playGoalHorn();
+          });
+        }
         return { 
           ...prev, 
           scoreLocal: val,
@@ -444,6 +504,11 @@ export default function App() {
       } else {
         const val = Math.max(0, Math.min(99, prev.scoreVisitor + delta));
         hardware.sendCommand(`V:${val}`);
+        if (delta > 0) {
+          triggerEventSound('onScoreVisitor', () => {
+            if (prev.sport === 'soccer' || prev.sport === 'futsal') sounds.playWhistle();
+          });
+        }
         return { 
           ...prev, 
           scoreVisitor: val,
@@ -456,14 +521,17 @@ export default function App() {
   };
 
   const handleTriggerHorn = () => {
-    if (state.soundEnabled) {
-      if (state.sport === 'soccer') {
-        sounds.playSoccerMatchWhistle();
-      } else {
-        sounds.playHorn(1500);
-      }
-    }
-    hardware.sendCommand('CMD:HORN');
+    triggerEventSound(
+      'onPeriodEndHorn',
+      () => {
+        if (state.sport === 'soccer') {
+          sounds.playSoccerMatchWhistle();
+        } else {
+          sounds.playHorn(1500);
+        }
+      },
+      'CMD:HORN'
+    );
   };
 
   const handleStartShotClock = () => {
@@ -576,6 +644,12 @@ export default function App() {
     const val = Math.max(0, Math.min(100, brightness));
     setState((prev) => ({ ...prev, brightness: val }));
     hardware.sendCommand(`BRIGHT:${val}`);
+  };
+
+  const handleSetClockColor = (color: ClockColor) => {
+    if (state.soundEnabled) sounds.playClick();
+    setState((prev) => ({ ...prev, clockColor: color }));
+    hardware.sendCommand(`CLKCLR:${color.toUpperCase()}`);
   };
 
   const handleSetAppMode = (mode: AppMode) => {
@@ -835,6 +909,30 @@ export default function App() {
               <span className="hidden sm:inline">MACROS PC</span>
             </button>
 
+            {/* Botón Acceso Sonidos Propios y Voces */}
+            <button
+              onClick={() => setIsCustomSoundModalOpen(true)}
+              className="px-3 py-2 rounded-xl border flex items-center space-x-1.5 transition font-stadium font-bold text-xs bg-pink-500/15 border-pink-500/40 text-pink-300 hover:bg-pink-500/25 shadow-md"
+              title="Cargar MP3 propios, grabar audios del estadio y personalizar eventos"
+            >
+              <Music className="w-4 h-4 text-pink-400" />
+              <span className="hidden lg:inline">SONIDOS PROPIOS ({customSounds.length})</span>
+            </button>
+
+            {/* Botón Rápido Descarga e Instalación (Win11 / Android) */}
+            <button
+              onClick={() => handleSetAppMode('downloads')}
+              className={`px-3 py-2 rounded-xl border flex items-center space-x-1.5 transition font-stadium font-bold text-xs ${
+                state.appMode === 'downloads'
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md'
+                  : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+              }`}
+              title="Descargar e Instalar en Windows 11 o Android"
+            >
+              <Download className="w-4 h-4 text-emerald-400" />
+              <span className="hidden md:inline">DESCARGAR APP</span>
+            </button>
+
             {/* Toggle de Sonido Web Audio */}
             <button
               onClick={() => setState((p) => ({ ...p, soundEnabled: !p.soundEnabled }))}
@@ -881,6 +979,7 @@ export default function App() {
           rtcTime={rtcTime}
           formatTimer={formatTimer}
           onSetBrightness={handleSetBrightness}
+          onSetClockColor={handleSetClockColor}
         />
 
         {/* HUD DE GUÍA DE ATRIBUTOS Y MACROS DE TECLADO */}
@@ -954,6 +1053,18 @@ export default function App() {
           </button>
 
           <button
+            onClick={() => handleSetAppMode('downloads')}
+            className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-stadium font-bold transition flex items-center justify-center space-x-2 ${
+              state.appMode === 'downloads'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg'
+                : 'text-emerald-400 bg-emerald-950/30 border border-emerald-500/30 hover:bg-emerald-900/40'
+            }`}
+          >
+            <Download className="w-4 h-4 text-emerald-300" />
+            <span>DESCARGAS & APP</span>
+          </button>
+
+          <button
             onClick={() => handleSetAppMode('arduino_code')}
             className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl font-stadium font-bold transition flex items-center justify-center space-x-2 ${
               state.appMode === 'arduino_code'
@@ -982,6 +1093,9 @@ export default function App() {
             onResetShotClock={handleResetShotClock}
             onSetSport={handleSetSport}
             onOpenKeyConfig={() => setIsKeyConfigModalOpen(true)}
+            customSounds={customSounds}
+            soundOverrides={soundOverrides}
+            onOpenCustomSoundManager={() => setIsCustomSoundModalOpen(true)}
           />
         )}
 
@@ -991,6 +1105,7 @@ export default function App() {
             updateState={updateState}
             rtcTime={rtcTime}
             onSyncRtc={syncRealTimeClock}
+            onSetClockColor={handleSetClockColor}
           />
         )}
 
@@ -1015,6 +1130,10 @@ export default function App() {
           <ArduinoSketchModal />
         )}
 
+        {state.appMode === 'downloads' && (
+          <AppDownloadPanel soundEnabled={state.soundEnabled} />
+        )}
+
         {/* MONITOR SERIE Y REGISTRO DE PROTOCOLO (SIEMPRE DISPONIBLE EN LA PARTE INFERIOR) */}
         <ProtocolTerminal
           logs={logs}
@@ -1032,6 +1151,16 @@ export default function App() {
         onSaveShortcuts={handleSaveShortcuts}
         enabled={keyboardShortcutsEnabled}
         onToggleEnabled={handleToggleShortcutsEnabled}
+      />
+
+      {/* MODAL DE GESTIÓN DE SONIDOS PROPIOS, MP3 Y VOCES */}
+      <CustomSoundManagerModal
+        isOpen={isCustomSoundModalOpen}
+        onClose={() => setIsCustomSoundModalOpen(false)}
+        soundsList={customSounds}
+        onSaveSounds={handleSaveCustomSounds}
+        soundOverrides={soundOverrides}
+        onSaveOverrides={handleSaveSoundOverrides}
       />
 
       {/* MODAL DE CONEXIÓN HARDWARE */}
