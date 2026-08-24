@@ -19,6 +19,16 @@ const device = await navigator.bluetooth.requestDevice({
     status: 'fixed'
   },
   {
+    id: 'audit-banner-2lines-scroll',
+    category: 'optimization',
+    title: 'Cartel de Mensajes: 2 Renglones y Animación Estática / Desplazamiento',
+    description: 'La retícula 17x64 permite 2 renglones de texto completos de 7 píxeles de alto (Filas 1-7 y 9-15) usando la tipografía 5x7 biselada. El firmware y el simulador soportan modo estático centrado y desplazamiento configurable tanto de izquierda a derecha como de derecha a izquierda.',
+    codeSnippetOriginal: `// Solo modo un renglón fijo`,
+    codeSnippetFixed: `// Soporte de 2 renglones con modo estático y desplazamiento continuo bidireccional:
+// Comandos: MODE:BANNER, MSG:LINEA1|LINEA2, BANNER:STATIC, BANNER:SCROLL:L2R:3`,
+    status: 'fixed'
+  },
+  {
     id: 'audit-audio-dfplayer-relay',
     category: 'optimization',
     title: 'Chicharra y Música de Juego Estilo Básquetbol (DFPlayer Mini + Relé)',
@@ -39,15 +49,863 @@ sendCommand(\`CLK:\${hours}:\${minutes}:\${seconds}:\${day}:\${month}:\${year}\`
     status: 'fixed'
   },
   {
-    id: 'audit-serial-buffer-overflow',
-    category: 'warning',
-    title: 'Delimitación de paquetes y Parser en Arduino sin bloqueo',
-    description: 'Enviar comandos con salto de línea \\n requiere que el Arduino use un buffer de lectura no bloqueante con detección de delimitador para evitar congelar el bucle loop() y permitir que el cronómetro, el display LED y el reproductor de sonido sigan funcionando fluidamente.',
-    codeSnippetOriginal: `// En Arduino típico: Serial.readString() bloquea el procesador varios milisegundos`,
-    codeSnippetFixed: `// En el sketch provisto: buffer estático circular con delimitador '\\n' sin bloqueo`,
+    id: 'audit-matrix-17x64-symmetry',
+    category: 'optimization',
+    title: 'Geometría y Simetría Axial de Retícula 17x64 (1088 Píxeles)',
+    description: 'La retícula matricial estándar de 17 filas x 64 columnas (1088 LEDs WS2812B) organiza el tablero en tres bloques armoniosos: Tanteador Local (Cols 0-17), Cronómetro y Shot Clock Central (Cols 18-45 con eje central en Col 32) y Tanteador Visitante (Cols 46-63), con la Fila 9 como eje de simetría horizontal para dígitos 5x7.',
+    codeSnippetOriginal: `// Matriz previa de 17x53 columnas`,
+    codeSnippetFixed: `// Configuración FastLED simétrica de 17 filas x 64 columnas = 1088 LEDs:
+#define MATRIX_ROWS 17
+#define MATRIX_COLS 64
+#define TOTAL_LEDS (MATRIX_ROWS * MATRIX_COLS) // 1088 LEDs WS2812B`,
+    status: 'fixed'
+  },
+  {
+    id: 'audit-compact-3x5-font',
+    category: 'optimization',
+    title: 'Tipografía Compacta 3x5 de Alta Capacidad y Legibilidad (16 Caracteres/Línea)',
+    description: 'Para evitar que las letras sean excesivamente grandes y permitan mayor contenido legible por renglón, se integró la tipografía matricial 3x5 (3 columnas de ancho x 5 filas de alto + 1 columna de separación = 4 px por letra). En la retícula de 64 columnas permite hasta 16 caracteres estáticos por renglón sin necesidad de scroll ni deformaciones.',
+    codeSnippetOriginal: `// Letras 5x7 ocupaban 6 columnas por letra (máximo 10 caracteres)`,
+    codeSnippetFixed: `// Matriz 3x5: 4 columnas por letra -> 16 caracteres estáticos por línea:
+const byte FONT_3X5[37][5] = { ... }; // Números 0-9 y Letras A-Z compactas`,
+    status: 'fixed'
+  },
+  {
+    id: 'audit-dynamic-led-lighting',
+    category: 'optimization',
+    title: 'Control de Iluminación LED y Efectos Dinámicos Independientes',
+    description: 'Permite configurar de forma individual el color (RGB Hex), efecto animado (estático, pulsación, onda, arcoíris, fuego, escáner, destellos, persecución), velocidad y brillo para cada componente del marcador (Local, Visitante, Periodo, Tiempo, Posesión, Cartel, Reloj, Bordes). Se sincroniza en tiempo real mediante el comando serie LED:<COMP_ID>:<HEX_COLOR>:<EFFECT>:<SPEED>:<BRIGHTNESS>.',
+    codeSnippetOriginal: `// Colores fijos cableados en el código`,
+    codeSnippetFixed: `// Sincronización dinámica vía puerto serie e interactividad FastLED en ESP32 / Arduino:
+// Comando: LED:scoreLocal:#00D2FF:wave:3:100
+// Parser FastLED: getComponentPixelColor(cfg, x, y, millis())`,
     status: 'fixed'
   }
 ];
+
+export const ARDUINO_MATRIX_17X64_SKETCH = `/*
+ * ==================================================================================
+ * TABLERO DEPORTIVO RETÍCULA LED WS2812B (17 FILAS x 64 COLUMNAS = 1088 PÍXELES)
+ * Plataforma recomendada: ESP32 DevKit V1 (o Arduino Mega con fuente 5V 15A)
+ * 
+ * MOTOR DE ILUMINACIÓN Y EFECTOS DINÁMICOS WS2812B:
+ *   - Control de color independiente por componente (Hexadecimal RGB)
+ *   - Efectos animados: Sólido, Pulso (Breathing), Onda Senoidal, Arcoíris (HSV),
+ *     Fuego Orgánico, Escáner Cylon, Destellos (Sparkle), Persecución (Chase).
+ *   - Protocolo serie: LED:<COMP_ID>:<HEX_COLOR>:<EFFECT>:<SPEED>:<BRIGHTNESS>
+ *
+ * ESQUEMA FÍSICO DE PÍXELES (256 cm x 68 cm con celdas de 4cm x 4cm):
+ *   - MODO TABLERO:
+ *       * Filas 1 a 7 (Cols 2 a 12): Tanteador Local (0 a 99) - Tipografía 5x7
+ *       * Filas 2 a 6 (Cols central): Periodo central simétrico - Tipografía 3x5
+ *       * Filas 1 a 7 (Cols 52 a 62): Tanteador Visitante (0 a 99) - Tipografía 5x7
+ *       * Filas 9 a 15 (Centrado H y V): Cronómetro "MM:SS" / "MMM:SS" (hasta 999 min) - Tipografía 5x7
+ *       * Cols 0 y 63: Indicadores de posesión lateral
+ *   - MODO RELOJ RTC:
+ *       * HH : MM : SS centrado en una sola línea con color configurable
+ *   - MODO CARTEL DE MENSAJES:
+ *       * Renglón 1 (Y=2) y Renglón 2 (Y=10) en fuente 3x5 (hasta 16 letras/línea)
+ *       * Modos: Estático centrado o Desplazamiento continuo suave
+ * ==================================================================================
+ */
+
+#include <FastLED.h>
+
+#define LED_PIN          18    // Pin de datos al primer LED WS2812B (resistor 330Ω)
+#define PIN_HORN_RELAY   23    // Salida a relé optoacoplado de bocina/sirena (12V/220V)
+#define MATRIX_ROWS      17
+#define MATRIX_COLS      64
+#define NUM_LEDS         (MATRIX_ROWS * MATRIX_COLS) // 1088 LEDs
+#define DEFAULT_BRIGHT   180   // 0 a 255 (controlable por comando BRIGHT:0-100)
+
+CRGB leds[NUM_LEDS];
+
+// =========================================================================
+// ESTRUCTURA Y MOTOR DE EFECTOS LED DINÁMICOS
+// =========================================================================
+enum LedEffectType {
+  EFFECT_SOLID = 0,
+  EFFECT_PULSE = 1,
+  EFFECT_WAVE = 2,
+  EFFECT_RAINBOW = 3,
+  EFFECT_FIRE = 4,
+  EFFECT_SCAN = 5,
+  EFFECT_SPARKLE = 6,
+  EFFECT_CHASE = 7
+};
+
+struct ComponentLedConfig {
+  CRGB baseColor;
+  LedEffectType effect;
+  byte speed;      // 1 (lento) a 5 (rápido)
+  byte brightness; // 10% a 100%
+};
+
+// Configuraciones iniciales por componente
+ComponentLedConfig cfgScoreLocal   = { CRGB(0, 210, 255),   EFFECT_SOLID, 3, 100 }; // Cyan
+ComponentLedConfig cfgScoreVisitor = { CRGB(255, 50, 60),   EFFECT_SOLID, 3, 100 }; // Rojo
+ComponentLedConfig cfgPeriod       = { CRGB(251, 191, 36),  EFFECT_SOLID, 3, 100 }; // Ámbar
+ComponentLedConfig cfgTimer        = { CRGB(255, 230, 0),   EFFECT_SOLID, 3, 100 }; // Amarillo
+ComponentLedConfig cfgPossession   = { CRGB(0, 210, 255),   EFFECT_PULSE, 4, 100 };
+ComponentLedConfig cfgBanner       = { CRGB(245, 158, 11),  EFFECT_SOLID, 3, 100 };
+ComponentLedConfig cfgClock        = { CRGB(6, 182, 212),   EFFECT_SOLID, 3, 100 };
+ComponentLedConfig cfgBorder       = { CRGB(30, 41, 59),    EFFECT_SOLID, 1, 40 };
+
+// Comprueba si algún componente requiere animación en tiempo real
+bool hasActiveAnimatedEffects() {
+  if (cfgScoreLocal.effect != EFFECT_SOLID) return true;
+  if (cfgScoreVisitor.effect != EFFECT_SOLID) return true;
+  if (cfgPeriod.effect != EFFECT_SOLID) return true;
+  if (cfgTimer.effect != EFFECT_SOLID) return true;
+  if (cfgPossession.effect != EFFECT_SOLID) return true;
+  if (cfgBanner.effect != EFFECT_SOLID) return true;
+  if (cfgClock.effect != EFFECT_SOLID) return true;
+  return false;
+}
+
+// Generador matemático de color para un píxel según su efecto asignado
+CRGB getComponentPixelColor(const ComponentLedConfig& cfg, int x, int y, uint32_t nowMs) {
+  float speedMultiplier = cfg.speed * 0.7f;
+  float scale = (float)cfg.brightness / 100.0f;
+
+  switch (cfg.effect) {
+    case EFFECT_PULSE: {
+      // Respiración suave sinusoidal
+      uint8_t breath = sin8((uint8_t)((nowMs * speedMultiplier / 6.0f)));
+      float factor = 0.35f + (0.65f * (breath / 255.0f));
+      CRGB c = cfg.baseColor;
+      c.nscale8_video((uint8_t)(255 * factor * scale));
+      return c;
+    }
+    case EFFECT_WAVE: {
+      // Onda espacial horizontal desplazándose
+      uint8_t wave = sin8((uint8_t)((nowMs * speedMultiplier / 5.0f) + (x * 16)));
+      float factor = 0.30f + (0.70f * (wave / 255.0f));
+      CRGB c = cfg.baseColor;
+      c.nscale8_video((uint8_t)(255 * factor * scale));
+      return c;
+    }
+    case EFFECT_RAINBOW: {
+      // Ciclo completo de espectro cromático HSV
+      uint8_t hue = (uint8_t)((nowMs * speedMultiplier / 12.0f) + (x * 4));
+      CRGB c = CHSV(hue, 240, (uint8_t)(255 * scale));
+      return c;
+    }
+    case EFFECT_FIRE: {
+      // Parpadeo orgánico estilo flama
+      uint8_t flicker = inoise8(x * 60, y * 60, (uint16_t)(nowMs * speedMultiplier / 3.0f));
+      uint8_t hue = map(flicker, 0, 255, 0, 38); // Rojo a amarillo cálido
+      uint8_t bri = map(flicker, 0, 255, 140, 255);
+      CRGB c = CHSV(hue, 255, (uint8_t)(bri * scale));
+      return c;
+    }
+    case EFFECT_SCAN: {
+      // Haz luminoso rebotante de izquierda a derecha (Escáner)
+      int beamPos = (int)beatsin8((uint8_t)(cfg.speed * 15), 0, MATRIX_COLS - 1, nowMs);
+      int dist = abs(x - beamPos);
+      float intensity = 0.25f;
+      if (dist == 0) intensity = 1.0f;
+      else if (dist == 1) intensity = 0.75f;
+      else if (dist == 2) intensity = 0.45f;
+      CRGB c = cfg.baseColor;
+      c.nscale8_video((uint8_t)(255 * intensity * scale));
+      return c;
+    }
+    case EFFECT_SPARKLE: {
+      // Destellos intermitentes aleatorios sobre el color base
+      uint8_t noiseVal = inoise8(x * 100, y * 100, (uint16_t)(nowMs * speedMultiplier / 2.0f));
+      CRGB c = cfg.baseColor;
+      if (noiseVal > 220) {
+        c = CRGB::White;
+      } else {
+        c.nscale8_video((uint8_t)(255 * 0.75f * scale));
+      }
+      return c;
+    }
+    case EFFECT_CHASE: {
+      // Puntos en persecución continua
+      int phase = ((int)(nowMs * speedMultiplier / 40.0f) + x) % 6;
+      float factor = (phase < 3) ? 1.0f : 0.3f;
+      CRGB c = cfg.baseColor;
+      c.nscale8_video((uint8_t)(255 * factor * scale));
+      return c;
+    }
+    case EFFECT_SOLID:
+    default: {
+      CRGB c = cfg.baseColor;
+      if (cfg.brightness < 100) {
+        c.nscale8_video((uint8_t)(255 * scale));
+      }
+      return c;
+    }
+  }
+}
+
+// Parsear color hexadecimal "#RRGGBB" o "RRGGBB" a CRGB
+CRGB parseHexColor(const char* hexStr) {
+  if (hexStr[0] == '#') hexStr++;
+  long number = strtol(hexStr, NULL, 16);
+  byte r = (number >> 16) & 0xFF;
+  byte g = (number >> 8) & 0xFF;
+  byte b = number & 0xFF;
+  return CRGB(r, g, b);
+}
+
+// Mapeo de nombre de efecto string a enum
+LedEffectType parseEffectString(const char* effStr) {
+  if (strcasecmp(effStr, "pulse") == 0) return EFFECT_PULSE;
+  if (strcasecmp(effStr, "wave") == 0) return EFFECT_WAVE;
+  if (strcasecmp(effStr, "rainbow") == 0) return EFFECT_RAINBOW;
+  if (strcasecmp(effStr, "fire") == 0) return EFFECT_FIRE;
+  if (strcasecmp(effStr, "scan") == 0) return EFFECT_SCAN;
+  if (strcasecmp(effStr, "sparkle") == 0) return EFFECT_SPARKLE;
+  if (strcasecmp(effStr, "chase") == 0) return EFFECT_CHASE;
+  return EFFECT_SOLID;
+}
+
+// Tipografía 5x7 con biseles exactos del plano de diseño (0-9)
+const byte FONT_5X7[10][7] = {
+  { 0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110 }, // 0
+  { 0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110 }, // 1
+  { 0b01110, 0b10001, 0b00001, 0b01110, 0b10000, 0b10000, 0b11111 }, // 2
+  { 0b01110, 0b10001, 0b00001, 0b00110, 0b00001, 0b10001, 0b01110 }, // 3
+  { 0b10001, 0b10001, 0b10001, 0b11111, 0b00001, 0b00001, 0b00001 }, // 4
+  { 0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110 }, // 5
+  { 0b01110, 0b10000, 0b11110, 0b10001, 0b10001, 0b10001, 0b01110 }, // 6
+  { 0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000 }, // 7
+  { 0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110 }, // 8
+  { 0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110 }  // 9
+};
+
+// Variables del Tablero y Modos
+int puntosLocal = 0;
+int puntosVisitante = 0;
+int faltasLocal = 0;
+int faltasVisitante = 0;
+int timeoutsLocal = 0;
+int timeoutsVisitor = 0;
+int minutosTiempo = 10;
+int segundosTiempo = 0;
+int shotClockSegundos = 24;
+char periodoActual[16] = "1";
+char deporteActual[16] = "BASKETBALL";
+char posesionBalon = 'N';
+bool cronometroCorriendo = false;
+bool bocinaActiva = false;
+unsigned long finBocinaMillis = 0;
+unsigned long ultimoFrameMillis = 0;
+
+// Modo del Cartel: 0 = Tablero Deportivo, 1 = Reloj RTC (HH:MM:SS), 2 = Cartel de Mensajes
+int modoCartel = 0; 
+int rtcHoras = 12;
+int rtcMinutos = 0;
+int rtcSegundos = 0;
+
+// Variables del Cartel de Mensajes
+char cartelLinea1[64] = "BIENVENIDOS";
+char cartelLinea2[64] = "AL GIMNASIO";
+bool cartelEstatico = true;
+bool cartelIzqADer = true;
+int cartelVelocidad = 3;
+int scrollOffset = 0;
+unsigned long ultimoScrollMillis = 0;
+
+// Buffer de Recepción Serie
+char rxBuffer[128];
+byte rxIndex = 0;
+
+// Mapeo Serpentina de Coordenadas (X, Y) a Índice Lineal de LED
+int XY(int x, int y) {
+  if (x < 0 || x >= MATRIX_COLS || y < 0 || y >= MATRIX_ROWS) return -1;
+  if (y % 2 == 0) {
+    return (y * MATRIX_COLS) + x;
+  } else {
+    return (y * MATRIX_COLS) + (MATRIX_COLS - 1 - x);
+  }
+}
+
+void setPixel(int x, int y, CRGB color) {
+  int idx = XY(x, y);
+  if (idx >= 0 && idx < NUM_LEDS) {
+    leds[idx] = color;
+  }
+}
+
+void drawDigit(int digit, int startX, int startY, const ComponentLedConfig& cfg, uint32_t nowMs) {
+  if (digit < 0 || digit > 9) return;
+  for (int r = 0; r < 7; r++) {
+    byte rowBits = FONT_5X7[digit][r];
+    for (int c = 0; c < 5; c++) {
+      if ((rowBits >> (4 - c)) & 1) {
+        int px = startX + c;
+        int py = startY + r;
+        setPixel(px, py, getComponentPixelColor(cfg, px, py, nowMs));
+      }
+    }
+  }
+}
+
+void drawLetterP(int startX, int startY, CRGB color) {
+  byte pBitmap[7] = { 0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000 };
+  for (int r = 0; r < 7; r++) {
+    for (int c = 0; c < 5; c++) {
+      if ((pBitmap[r] >> (4 - c)) & 1) {
+        setPixel(startX + c, startY + r, color);
+      }
+    }
+  }
+}
+
+// Tipografía 5x7 Biselada (Números 0-9, Letras y Símbolos) con configuración LED
+void drawChar5x7(char ch, int startX, int startY, const ComponentLedConfig& cfg, uint32_t nowMs) {
+  if (ch >= '0' && ch <= '9') {
+    drawDigit(ch - '0', startX, startY, cfg, nowMs);
+    return;
+  }
+  byte b[7] = {0,0,0,0,0,0,0};
+  switch (toupper(ch)) {
+    case ':': b[0]=0b00000; b[1]=0b01100; b[2]=0b01100; b[3]=0b00000; b[4]=0b01100; b[5]=0b01100; b[6]=0b00000; break;
+    case '-': b[0]=0b00000; b[1]=0b00000; b[2]=0b00000; b[3]=0b11111; b[4]=0b00000; b[5]=0b00000; b[6]=0b00000; break;
+    case 'A': b[0]=0b01110; b[1]=0b10001; b[2]=0b10001; b[3]=0b11111; b[4]=0b10001; b[5]=0b10001; b[6]=0b10001; break;
+    case 'B': b[0]=0b11110; b[1]=0b10001; b[2]=0b10001; b[3]=0b11110; b[4]=0b10001; b[5]=0b10001; b[6]=0b11110; break;
+    case 'C': b[0]=0b01110; b[1]=0b10001; b[2]=0b10000; b[3]=0b10000; b[4]=0b10000; b[5]=0b10001; b[6]=0b01110; break;
+    case 'D': b[0]=0b11100; b[1]=0b10010; b[2]=0b10001; b[3]=0b10001; b[4]=0b10001; b[5]=0b10010; b[6]=0b11100; break;
+    case 'E': b[0]=0b11111; b[1]=0b10000; b[2]=0b11110; b[3]=0b10000; b[4]=0b10000; b[5]=0b10000; b[6]=0b11111; break;
+    case 'F': b[0]=0b11111; b[1]=0b10000; b[2]=0b11110; b[3]=0b10000; b[4]=0b10000; b[5]=0b10000; b[6]=0b10000; break;
+    case 'G': b[0]=0b01110; b[1]=0b10001; b[2]=0b10000; b[3]=0b10111; b[4]=0b10001; b[5]=0b10001; b[6]=0b01110; break;
+    case 'H': b[0]=0b10001; b[1]=0b10001; b[2]=0b10001; b[3]=0b11111; b[4]=0b10001; b[5]=0b10001; b[6]=0b10001; break;
+    case 'I': b[0]=0b01110; b[1]=0b00100; b[2]=0b00100; b[3]=0b00100; b[4]=0b00100; b[5]=0b00100; b[6]=0b01110; break;
+    case 'L': b[0]=0b10000; b[1]=0b10000; b[2]=0b10000; b[3]=0b10000; b[4]=0b10000; b[5]=0b10000; b[6]=0b11111; break;
+    case 'M': b[0]=0b10001; b[1]=0b11011; b[2]=0b10101; b[3]=0b10101; b[4]=0b10001; b[5]=0b10001; b[6]=0b10001; break;
+    case 'N': b[0]=0b10001; b[1]=0b11001; b[2]=0b10101; b[3]=0b10011; b[4]=0b10001; b[5]=0b10001; b[6]=0b10001; break;
+    case 'O': b[0]=0b01110; b[1]=0b10001; b[2]=0b10001; b[3]=0b10001; b[4]=0b10001; b[5]=0b10001; b[6]=0b01110; break;
+    case 'P': b[0]=0b11110; b[1]=0b10001; b[2]=0b10001; b[3]=0b11110; b[4]=0b10000; b[5]=0b10000; b[6]=0b10000; break;
+    case 'R': b[0]=0b11110; b[1]=0b10001; b[2]=0b10001; b[3]=0b11110; b[4]=0b10100; b[5]=0b10010; b[6]=0b10001; break;
+    case 'S': b[0]=0b01110; b[1]=0b10001; b[2]=0b10000; b[3]=0b01110; b[4]=0b00001; b[5]=0b10001; b[6]=0b01110; break;
+    case 'T': b[0]=0b11111; b[1]=0b00100; b[2]=0b00100; b[3]=0b00100; b[4]=0b00100; b[5]=0b00100; b[6]=0b00100; break;
+    case 'U': b[0]=0b10001; b[1]=0b10001; b[2]=0b10001; b[3]=0b10001; b[4]=0b10001; b[5]=0b10001; b[6]=0b01110; break;
+    case 'V': b[0]=0b10001; b[1]=0b10001; b[2]=0b10001; b[3]=0b10001; b[4]=0b10001; b[5]=0b01010; b[6]=0b00100; break;
+    default: return;
+  }
+  for (int r = 0; r < 7; r++) {
+    for (int c = 0; c < 5; c++) {
+      if ((b[r] >> (4 - c)) & 1) {
+        int px = startX + c;
+        int py = startY + r;
+        setPixel(px, py, getComponentPixelColor(cfg, px, py, nowMs));
+      }
+    }
+  }
+}
+
+// Renderizado de caracteres alfanuméricos simples para el cartel
+void drawAsciiChar(char ch, int startX, int startY, CRGB color) {
+  if (ch >= '0' && ch <= '9') {
+    drawDigit(ch - '0', startX, startY, color);
+    return;
+  }
+  // Mapeo de letras mayúsculas básicas en 5x7
+  byte b[7] = {0,0,0,0,0,0,0};
+  switch (toupper(ch)) {
+    case 'A': b[0]=0b01110; b[1]=0b10001; b[2]=0b10001; b[3]=0b11111; b[4]=0b10001; b[5]=0b10001; b[6]=0b10001; break;
+    case 'B': b[0]=0b11110; b[1]=0b10001; b[2]=0b10001; b[3]=0b11110; b[4]=0b10001; b[5]=0b10001; b[6]=0b11110; break;
+    case 'C': b[0]=0b01110; b[1]=0b10001; b[2]=0b10000; b[3]=0b10000; b[4]=0b10000; b[5]=0b10001; b[6]=0b01110; break;
+    case 'D': b[0]=0b11100; b[1]=0b10010; b[2]=0b10001; b[3]=0b10001; b[4]=0b10001; b[5]=0b10010; b[6]=0b11100; break;
+    case 'E': b[0]=0b11111; b[1]=0b10000; b[2]=0b11110; b[3]=0b10000; b[4]=0b10000; b[5]=0b10000; b[6]=0b11111; break;
+    case 'F': b[0]=0b11111; b[1]=0b10000; b[2]=0b11110; b[3]=0b10000; b[4]=0b10000; b[5]=0b10000; b[6]=0b10000; break;
+    case 'G': b[0]=0b01110; b[1]=0b10001; b[2]=0b10000; b[3]=0b10111; b[4]=0b10001; b[5]=0b10001; b[6]=0b01110; break;
+    case 'H': b[0]=0b10001; b[1]=0b10001; b[2]=0b10001; b[3]=0b11111; b[4]=0b10001; b[5]=0b10001; b[6]=0b10001; break;
+    case 'I': b[0]=0b01110; b[1]=0b00100; b[2]=0b00100; b[3]=0b00100; b[4]=0b00100; b[5]=0b00100; b[6]=0b01110; break;
+    case 'L': b[0]=0b10000; b[1]=0b10000; b[2]=0b10000; b[3]=0b10000; b[4]=0b10000; b[5]=0b10000; b[6]=0b11111; break;
+    case 'M': b[0]=0b10001; b[1]=0b11011; b[2]=0b10101; b[3]=0b10101; b[4]=0b10001; b[5]=0b10001; b[6]=0b10001; break;
+    case 'N': b[0]=0b10001; b[1]=0b11001; b[2]=0b10101; b[3]=0b10011; b[4]=0b10001; b[5]=0b10001; b[6]=0b10001; break;
+    case 'O': b[0]=0b01110; b[1]=0b10001; b[2]=0b10001; b[3]=0b10001; b[4]=0b10001; b[5]=0b10001; b[6]=0b01110; break;
+    case 'P': b[0]=0b11110; b[1]=0b10001; b[2]=0b10001; b[3]=0b11110; b[4]=0b10000; b[5]=0b10000; b[6]=0b10000; break;
+    case 'R': b[0]=0b11110; b[1]=0b10001; b[2]=0b10001; b[3]=0b11110; b[4]=0b10100; b[5]=0b10010; b[6]=0b10001; break;
+    case 'S': b[0]=0b01110; b[1]=0b10001; b[2]=0b10000; b[3]=0b01110; b[4]=0b00001; b[5]=0b10001; b[6]=0b01110; break;
+    case 'T': b[0]=0b11111; b[1]=0b00100; b[2]=0b00100; b[3]=0b00100; b[4]=0b00100; b[5]=0b00100; b[6]=0b00100; break;
+    case 'U': b[0]=0b10001; b[1]=0b10001; b[2]=0b10001; b[3]=0b10001; b[4]=0b10001; b[5]=0b10001; b[6]=0b01110; break;
+    case 'V': b[0]=0b10001; b[1]=0b10001; b[2]=0b10001; b[3]=0b10001; b[4]=0b10001; b[5]=0b01010; b[6]=0b00100; break;
+    case '!': b[0]=0b00100; b[1]=0b00100; b[2]=0b00100; b[3]=0b00100; b[4]=0b00100; b[5]=0b00000; b[6]=0b00100; break;
+    case '-': b[0]=0b00000; b[1]=0b00000; b[2]=0b00000; b[3]=0b11111; b[4]=0b00000; b[5]=0b00000; b[6]=0b00000; break;
+    case ':': b[0]=0b00000; b[1]=0b01100; b[2]=0b01100; b[3]=0b00000; b[4]=0b01100; b[5]=0b01100; b[6]=0b00000; break;
+    default: return;
+  }
+  for (int r = 0; r < 7; r++) {
+    for (int c = 0; c < 5; c++) {
+      if ((b[r] >> (4 - c)) & 1) {
+        setPixel(startX + c, startY + r, color);
+      }
+    }
+  }
+}
+
+// Tipografía 4x6 Mediana (Números 0-9, Letras y Símbolos) - 5 columnas por letra
+const byte FONT_4X6_NUMS[10][6] = {
+  { 0b0110, 0b1001, 0b1001, 0b1001, 0b1001, 0b0110 }, // 0
+  { 0b0100, 0b1100, 0b0100, 0b0100, 0b0100, 0b1110 }, // 1
+  { 0b1110, 0b0001, 0b0110, 0b1000, 0b1000, 0b1111 }, // 2
+  { 0b1110, 0b0001, 0b0110, 0b0001, 0b0001, 0b1110 }, // 3
+  { 0b1001, 0b1001, 0b1111, 0b0001, 0b0001, 0b0001 }, // 4
+  { 0b1111, 0b1000, 0b1110, 0b0001, 0b0001, 0b1110 }, // 5
+  { 0b0110, 0b1000, 0b1110, 0b1001, 0b1001, 0b0110 }, // 6
+  { 0b1111, 0b0001, 0b0010, 0b0100, 0b0100, 0b0100 }, // 7
+  { 0b0110, 0b1001, 0b0110, 0b1001, 0b1001, 0b0110 }, // 8
+  { 0b0110, 0b1001, 0b0111, 0b0001, 0b0001, 0b0110 }  // 9
+};
+
+void drawChar4x6(char ch, int startX, int startY, const ComponentLedConfig& cfg, uint32_t nowMs) {
+  if (ch >= '0' && ch <= '9') {
+    int digit = ch - '0';
+    for (int r = 0; r < 6; r++) {
+      byte rowBits = FONT_4X6_NUMS[digit][r];
+      for (int c = 0; c < 4; c++) {
+        if ((rowBits >> (3 - c)) & 1) {
+          int px = startX + c;
+          int py = startY + r;
+          setPixel(px, py, getComponentPixelColor(cfg, px, py, nowMs));
+        }
+      }
+    }
+    return;
+  }
+  byte b[6] = {0,0,0,0,0,0};
+  switch (toupper(ch)) {
+    case ':': b[0]=0b0000; b[1]=0b0110; b[2]=0b0000; b[3]=0b0110; b[4]=0b0000; b[5]=0b0000; break;
+    case '-': b[0]=0b0000; b[1]=0b0000; b[2]=0b1111; b[3]=0b0000; b[4]=0b0000; b[5]=0b0000; break;
+    case 'A': b[0]=0b0110; b[1]=0b1001; b[2]=0b1111; b[3]=0b1001; b[4]=0b1001; b[5]=0b1001; break;
+    case 'B': b[0]=0b1110; b[1]=0b1001; b[2]=0b1110; b[3]=0b1001; b[4]=0b1001; b[5]=0b1110; break;
+    case 'C': b[0]=0b0110; b[1]=0b1001; b[2]=0b1000; b[3]=0b1000; b[4]=0b1001; b[5]=0b0110; break;
+    case 'D': b[0]=0b1110; b[1]=0b1001; b[2]=0b1001; b[3]=0b1001; b[4]=0b1001; b[5]=0b1110; break;
+    case 'E': b[0]=0b1111; b[1]=0b1000; b[2]=0b1110; b[3]=0b1000; b[4]=0b1000; b[5]=0b1111; break;
+    case 'F': b[0]=0b1111; b[1]=0b1000; b[2]=0b1110; b[3]=0b1000; b[4]=0b1000; b[5]=0b1000; break;
+    case 'G': b[0]=0b0110; b[1]=0b1001; b[2]=0b1000; b[3]=0b1011; b[4]=0b1001; b[5]=0b0110; break;
+    case 'H': b[0]=0b1001; b[1]=0b1001; b[2]=0b1111; b[3]=0b1001; b[4]=0b1001; b[5]=0b1001; break;
+    case 'I': b[0]=0b1110; b[1]=0b0100; b[2]=0b0100; b[3]=0b0100; b[4]=0b0100; b[5]=0b1110; break;
+    case 'L': b[0]=0b1000; b[1]=0b1000; b[2]=0b1000; b[3]=0b1000; b[4]=0b1000; b[5]=0b1111; break;
+    case 'M': b[0]=0b1001; b[1]=0b1111; b[2]=0b1111; b[3]=0b1001; b[4]=0b1001; b[5]=0b1001; break;
+    case 'N': b[0]=0b1001; b[1]=0b1101; b[2]=0b1101; b[3]=0b1011; b[4]=0b1001; b[5]=0b1001; break;
+    case 'O': b[0]=0b0110; b[1]=0b1001; b[2]=0b1001; b[3]=0b1001; b[4]=0b1001; b[5]=0b0110; break;
+    case 'P': b[0]=0b1110; b[1]=0b1001; b[2]=0b1110; b[3]=0b1000; b[4]=0b1000; b[5]=0b1000; break;
+    case 'R': b[0]=0b1110; b[1]=0b1001; b[2]=0b1110; b[3]=0b1100; b[4]=0b1010; b[5]=0b1001; break;
+    case 'S': b[0]=0b0110; b[1]=0b1000; b[2]=0b0110; b[3]=0b0001; b[4]=0b1001; b[5]=0b0110; break;
+    case 'T': b[0]=0b1111; b[1]=0b0100; b[2]=0b0100; b[3]=0b0100; b[4]=0b0100; b[5]=0b0100; break;
+    case 'U': b[0]=0b1001; b[1]=0b1001; b[2]=0b1001; b[3]=0b1001; b[4]=0b1001; b[5]=0b0110; break;
+    default: return;
+  }
+  for (int r = 0; r < 6; r++) {
+    for (int c = 0; c < 4; c++) {
+      if ((b[r] >> (3 - c)) & 1) {
+        int px = startX + c;
+        int py = startY + r;
+        setPixel(px, py, getComponentPixelColor(cfg, px, py, nowMs));
+      }
+    }
+  }
+}
+
+// Tipografía 3x5 Compacta (Números 0-9 y Letras A-Z) - 4 columnas por letra
+const byte FONT_3X5_NUMS[10][5] = {
+  { 0b111, 0b101, 0b101, 0b101, 0b111 }, // 0
+  { 0b010, 0b110, 0b010, 0b010, 0b111 }, // 1
+  { 0b111, 0b001, 0b111, 0b100, 0b111 }, // 2
+  { 0b111, 0b001, 0b111, 0b001, 0b111 }, // 3
+  { 0b101, 0b101, 0b111, 0b001, 0b001 }, // 4
+  { 0b111, 0b100, 0b111, 0b001, 0b111 }, // 5
+  { 0b111, 0b100, 0b111, 0b101, 0b111 }, // 6
+  { 0b111, 0b001, 0b010, 0b010, 0b010 }, // 7
+  { 0b111, 0b101, 0b111, 0b101, 0b111 }, // 8
+  { 0b111, 0b101, 0b111, 0b001, 0b111 }  // 9
+};
+
+void drawChar3x5(char ch, int startX, int startY, const ComponentLedConfig& cfg, uint32_t nowMs) {
+  if (ch >= '0' && ch <= '9') {
+    int digit = ch - '0';
+    for (int r = 0; r < 5; r++) {
+      byte rowBits = FONT_3X5_NUMS[digit][r];
+      for (int c = 0; c < 3; c++) {
+        if ((rowBits >> (2 - c)) & 1) {
+          int px = startX + c;
+          int py = startY + r;
+          setPixel(px, py, getComponentPixelColor(cfg, px, py, nowMs));
+        }
+      }
+    }
+    return;
+  }
+  byte b[5] = {0,0,0,0,0};
+  switch (toupper(ch)) {
+    case 'A': b[0]=0b111; b[1]=0b101; b[2]=0b111; b[3]=0b101; b[4]=0b101; break;
+    case 'B': b[0]=0b110; b[1]=0b101; b[2]=0b110; b[3]=0b101; b[4]=0b110; break;
+    case 'C': b[0]=0b111; b[1]=0b100; b[2]=0b100; b[3]=0b100; b[4]=0b111; break;
+    case 'D': b[0]=0b110; b[1]=0b101; b[2]=0b101; b[3]=0b101; b[4]=0b110; break;
+    case 'E': b[0]=0b111; b[1]=0b100; b[2]=0b110; b[3]=0b100; b[4]=0b111; break;
+    case 'F': b[0]=0b111; b[1]=0b100; b[2]=0b110; b[3]=0b100; b[4]=0b100; break;
+    case 'G': b[0]=0b111; b[1]=0b100; b[2]=0b101; b[3]=0b101; b[4]=0b111; break;
+    case 'H': b[0]=0b101; b[1]=0b101; b[2]=0b111; b[3]=0b101; b[4]=0b101; break;
+    case 'I': b[0]=0b111; b[1]=0b010; b[2]=0b010; b[3]=0b010; b[4]=0b111; break;
+    case 'J': b[0]=0b001; b[1]=0b001; b[2]=0b001; b[3]=0b101; b[4]=0b111; break;
+    case 'K': b[0]=0b101; b[1]=0b110; b[2]=0b100; b[3]=0b110; b[4]=0b101; break;
+    case 'L': b[0]=0b100; b[1]=0b100; b[2]=0b100; b[3]=0b100; b[4]=0b111; break;
+    case 'M': b[0]=0b101; b[1]=0b111; b[2]=0b111; b[3]=0b101; b[4]=0b101; break;
+    case 'N': b[0]=0b111; b[1]=0b101; b[2]=0b101; b[3]=0b101; b[4]=0b101; break;
+    case 'O': b[0]=0b111; b[1]=0b101; b[2]=0b101; b[3]=0b101; b[4]=0b111; break;
+    case 'P': b[0]=0b111; b[1]=0b101; b[2]=0b111; b[3]=0b100; b[4]=0b100; break;
+    case 'Q': b[0]=0b111; b[1]=0b101; b[2]=0b101; b[3]=0b111; b[4]=0b001; break;
+    case 'R': b[0]=0b110; b[1]=0b101; b[2]=0b110; b[3]=0b101; b[4]=0b101; break;
+    case 'S': b[0]=0b111; b[1]=0b100; b[2]=0b111; b[3]=0b001; b[4]=0b111; break;
+    case 'T': b[0]=0b111; b[1]=0b010; b[2]=0b010; b[3]=0b010; b[4]=0b010; break;
+    case 'U': b[0]=0b101; b[1]=0b101; b[2]=0b101; b[3]=0b101; b[4]=0b111; break;
+    case 'V': b[0]=0b101; b[1]=0b101; b[2]=0b101; b[3]=0b101; b[4]=0b010; break;
+    case 'W': b[0]=0b101; b[1]=0b101; b[2]=0b111; b[3]=0b111; b[4]=0b101; break;
+    case 'X': b[0]=0b101; b[1]=0b101; b[2]=0b010; b[3]=0b101; b[4]=0b101; break;
+    case 'Y': b[0]=0b101; b[1]=0b101; b[2]=0b111; b[3]=0b010; b[4]=0b010; break;
+    case 'Z': b[0]=0b111; b[1]=0b001; b[2]=0b010; b[3]=0b100; b[4]=0b111; break;
+    case '!': b[0]=0b010; b[1]=0b010; b[2]=0b010; b[3]=0b000; b[4]=0b010; break;
+    case '-': b[0]=0b000; b[1]=0b000; b[2]=0b111; b[3]=0b000; b[4]=0b000; break;
+    case ':': b[0]=0b000; b[1]=0b010; b[2]=0b000; b[3]=0b010; b[4]=0b000; break;
+    default: return;
+  }
+  for (int r = 0; r < 5; r++) {
+    for (int c = 0; c < 3; c++) {
+      if ((b[r] >> (2 - c)) & 1) {
+        int px = startX + c;
+        int py = startY + r;
+        setPixel(px, py, getComponentPixelColor(cfg, px, py, nowMs));
+      }
+    }
+  }
+}
+
+void renderReticleMatrix() {
+  FastLED.clear();
+  uint32_t nowMs = millis();
+
+  // =========================================================================
+  // MODO TABLERO DEPORTIVO PROFESIONAL (RETÍCULA 17x64 PÍXELES)
+  // RENGLÓN 1 (Filas 1-7): Puntajes en 5x7 y Periodo central simétrico en 3x5
+  // RENGLÓN 2 (Filas 9-14): Tiempo de juego completo "HH:MM:SS" en letra 4x6
+  // =========================================================================
+
+  // 1. TANTEADOR LOCAL (Cols 2 y 8, Filas 1-7, Fuente 5x7)
+  drawDigit(puntosLocal / 10, 2, 1, cfgScoreLocal, nowMs);
+  drawDigit(puntosLocal % 10, 8, 1, cfgScoreLocal, nowMs);
+
+  // 2. PERIODO JUGADO EN EL CENTRO (Filas 2-6, Fuente compacta 3x5 centrada simétricamente)
+  char txtPeriodo[16];
+  if (strstr(periodoActual, "CUARTO") != NULL || strstr(periodoActual, "SET") != NULL || strstr(periodoActual, "TIEMPO") != NULL || strstr(periodoActual, "PERIODO") != NULL) {
+    strncpy(txtPeriodo, periodoActual, 15);
+  } else if (strcmp(periodoActual, "OT") == 0 || strcmp(periodoActual, "TE") == 0 || strcmp(periodoActual, "E") == 0 || strcmp(periodoActual, "EXTRA") == 0) {
+    strcpy(txtPeriodo, "T EXTRA");
+  } else if (strstr(deporteActual, "VOLLEY") != NULL || strstr(deporteActual, "VOLEY") != NULL || periodoActual[0] == 'S') {
+    char num = (periodoActual[0] == 'S' && periodoActual[1] >= '1' && periodoActual[1] <= '5') 
+               ? periodoActual[1] 
+               : (periodoActual[0] >= '1' && periodoActual[0] <= '5' ? periodoActual[0] : '1');
+    snprintf(txtPeriodo, sizeof(txtPeriodo), "%c SET", num);
+  } else if (strstr(deporteActual, "SOCCER") != NULL || strstr(deporteActual, "FUTBOL") != NULL || strstr(deporteActual, "FUTSAL") != NULL || strstr(deporteActual, "HANDBALL") != NULL || strstr(periodoActual, "T") != NULL) {
+    char num = (periodoActual[0] >= '1' && periodoActual[0] <= '9') ? periodoActual[0] : '1';
+    snprintf(txtPeriodo, sizeof(txtPeriodo), "%c TIEMPO", num);
+  } else {
+    char num = (periodoActual[0] >= '1' && periodoActual[0] <= '9') ? periodoActual[0] : '1';
+    snprintf(txtPeriodo, sizeof(txtPeriodo), "%c CUARTO", num);
+  }
+  txtPeriodo[15] = '\0';
+  int perLen = strlen(txtPeriodo);
+  int perStartCol = max(14, (MATRIX_COLS - (perLen * 4)) / 2);
+  for (int i = 0; i < perLen; i++) {
+    int col = perStartCol + i * 4;
+    if (col + 3 >= 0 && col < MATRIX_COLS) {
+      drawChar3x5(txtPeriodo[i], col, 2, cfgPeriod, nowMs);
+    }
+  }
+
+  // 3. TANTEADOR VISITANTE (Cols 52 y 58, Filas 1-7, Fuente 5x7)
+  drawDigit(puntosVisitante / 10, 52, 1, cfgScoreVisitor, nowMs);
+  drawDigit(puntosVisitante % 10, 58, 1, cfgScoreVisitor, nowMs);
+
+  // 4. INDICADORES DE POSESIÓN EN BORDES (Cols 0 y 63)
+  if (posesionBalon == 'L') {
+    for (int y = 3; y <= 5; y++) setPixel(0, y, getComponentPixelColor(cfgPossession, 0, y, nowMs));
+  } else if (posesionBalon == 'V') {
+    for (int y = 3; y <= 5; y++) setPixel(63, y, getComponentPixelColor(cfgPossession, 63, y, nowMs));
+  }
+
+  // 5. CRONÓMETRO DE TIEMPO DE JUEGO (MINUTOS Y SEGUNDOS) CENTRADO
+  // Centrado horizontal y vertical en el segundo renglón (Filas 9 a 15, Fuente 5x7)
+  // Solo minutos y segundos, con soporte de hasta 3 dígitos para minutos (ej: 00:00, 45:00, 120:00)
+  char timeBuffer[12];
+  if (minutosTiempo >= 100) {
+    snprintf(timeBuffer, sizeof(timeBuffer), "%d:%02d", minutosTiempo, segundosTiempo);
+  } else {
+    snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d", minutosTiempo, segundosTiempo);
+  }
+
+  int timeLen = strlen(timeBuffer);
+  int totalTimeWidth = (timeLen * 6) - 1;
+  int timerStartCol = max(0, (MATRIX_COLS - totalTimeWidth) / 2);
+  int timerStartRow = 9; // Filas 9 a 15 (altura 7, perfectamente centrada verticalmente)
+
+  for (int i = 0; i < timeLen; i++) {
+    drawChar5x7(timeBuffer[i], timerStartCol + i * 6, timerStartRow, cfgTimer, nowMs);
+  }
+
+  FastLED.show();
+}
+
+void renderClockMatrix() {
+  FastLED.clear();
+  uint32_t nowMs = millis();
+
+  // RENDERIZADO DEL RELOJ EN UNA SOLA LÍNEA (17 Filas x 64 Columnas)
+  // Formato: HH : MM : SS centrado horizontalmente (Cols 13 a 51) y verticalmente (Fila 5 a 11)
+  
+  // 1. Bloque Horas (Cols 13..17 y 19..23)
+  drawDigit(rtcHoras / 10, 13, 5, cfgClock, nowMs);
+  drawDigit(rtcHoras % 10, 19, 5, cfgClock, nowMs);
+
+  // 2. Primeros dos puntos ':' en Columna 25 (Filas 7 y 9)
+  setPixel(25, 7, getComponentPixelColor(cfgClock, 25, 7, nowMs));
+  setPixel(25, 9, getComponentPixelColor(cfgClock, 25, 9, nowMs));
+
+  // 3. Bloque Minutos (Cols 27..31 y 33..37)
+  drawDigit(rtcMinutos / 10, 27, 5, cfgClock, nowMs);
+  drawDigit(rtcMinutos % 10, 33, 5, cfgClock, nowMs);
+
+  // 4. Segundos dos puntos ':' en Columna 39 (Filas 7 y 9)
+  setPixel(39, 7, getComponentPixelColor(cfgClock, 39, 7, nowMs));
+  setPixel(39, 9, getComponentPixelColor(cfgClock, 39, 9, nowMs));
+
+  // 5. Bloque Segundos (Cols 41..45 y 47..51)
+  drawDigit(rtcSegundos / 10, 41, 5, cfgClock, nowMs);
+  drawDigit(rtcSegundos % 10, 47, 5, cfgClock, nowMs);
+
+  FastLED.show();
+}
+
+void renderBannerLine(const char* text, int rowY, int startCol, uint32_t nowMs) {
+  int len = strlen(text);
+  for (int i = 0; i < len; i++) {
+    int col = startCol + i * 4; // 4 columnas por carácter en fuente 3x5
+    if (col + 3 >= 0 && col < MATRIX_COLS) {
+      drawChar3x5(text[i], col, rowY, cfgBanner, nowMs);
+    }
+  }
+}
+
+void renderBannerMatrix() {
+  FastLED.clear();
+  uint32_t nowMs = millis();
+
+  // MODO CARTEL: 2 RENGLONES CON TIPOGRAFÍA COMPACTA 3x5 (R1: Y=2, R2: Y=10)
+  int len1 = strlen(cartelLinea1);
+  int len2 = strlen(cartelLinea2);
+
+  if (cartelEstatico) {
+    int startCol1 = max(0, (MATRIX_COLS - (len1 * 4)) / 2);
+    int startCol2 = max(0, (MATRIX_COLS - (len2 * 4)) / 2);
+    renderBannerLine(cartelLinea1, 2, startCol1, nowMs);
+    renderBannerLine(cartelLinea2, 10, startCol2, nowMs);
+  } else {
+    int maxLen = max(len1, len2);
+    int totalWidth = maxLen * 4;
+    int cycle = totalWidth + MATRIX_COLS + 10;
+    int pos = scrollOffset % cycle;
+    int startCol = cartelIzqADer ? (-totalWidth + pos) : (MATRIX_COLS - pos);
+
+    renderBannerLine(cartelLinea1, 2, startCol, nowMs);
+    renderBannerLine(cartelLinea2, 10, startCol, nowMs);
+  }
+
+  FastLED.show();
+}
+
+void renderDisplay() {
+  if (modoCartel == 1) {
+    renderClockMatrix();
+  } else if (modoCartel == 2) {
+    renderBannerMatrix();
+  } else {
+    renderReticleMatrix();
+  }
+}
+
+void procesarComando(char* cmd) {
+  if (strncmp(cmd, "MODE:CLOCK", 10) == 0) {
+    modoCartel = 1;
+    renderDisplay();
+  }
+  else if (strncmp(cmd, "MODE:SCOREBOARD", 15) == 0) {
+    modoCartel = 0;
+    renderDisplay();
+  }
+  else if (strncmp(cmd, "MODE:BANNER", 11) == 0) {
+    modoCartel = 2;
+    renderDisplay();
+  }
+  else if (strncmp(cmd, "LED:", 4) == 0) {
+    // Protocolo LED:<COMP_ID>:<HEX_COLOR>:<EFFECT>:<SPEED>:<BRIGHTNESS>
+    char temp[64];
+    strncpy(temp, cmd + 4, sizeof(temp));
+    char* compToken = strtok(temp, ":");
+    char* colorToken = strtok(NULL, ":");
+    char* effectToken = strtok(NULL, ":");
+    char* speedToken = strtok(NULL, ":");
+    char* brightToken = strtok(NULL, ":");
+    
+    if (compToken && colorToken) {
+      ComponentLedConfig* target = NULL;
+      if (strcmp(compToken, "scoreLocal") == 0) target = &cfgScoreLocal;
+      else if (strcmp(compToken, "scoreVisitor") == 0) target = &cfgScoreVisitor;
+      else if (strcmp(compToken, "period") == 0) target = &cfgPeriod;
+      else if (strcmp(compToken, "timer") == 0) target = &cfgTimer;
+      else if (strcmp(compToken, "possession") == 0) target = &cfgPossession;
+      else if (strcmp(compToken, "banner") == 0) target = &cfgBanner;
+      else if (strcmp(compToken, "clock") == 0) target = &cfgClock;
+      else if (strcmp(compToken, "border") == 0) target = &cfgBorder;
+
+      if (target) {
+        target->baseColor = parseHexColor(colorToken);
+        if (effectToken) target->effect = parseEffectString(effectToken);
+        if (speedToken) target->speed = constrain(atoi(speedToken), 1, 5);
+        if (brightToken) target->brightness = constrain(atoi(brightToken), 10, 100);
+        renderDisplay();
+      }
+    }
+  }
+  else if (strncmp(cmd, "MSG:", 4) == 0) {
+    // Formato MSG:LINEA1|LINEA2 o MSG:TEXTO
+    modoCartel = 2;
+    char temp[128];
+    strncpy(temp, cmd + 4, sizeof(temp));
+    char* sep = strchr(temp, '|');
+    if (sep != NULL) {
+      *sep = '\\0';
+      strncpy(cartelLinea1, temp, sizeof(cartelLinea1));
+      strncpy(cartelLinea2, sep + 1, sizeof(cartelLinea2));
+    } else {
+      strncpy(cartelLinea1, temp, sizeof(cartelLinea1));
+      cartelLinea2[0] = '\\0';
+    }
+    renderBannerMatrix();
+  }
+  else if (strncmp(cmd, "BANNER:STATIC", 13) == 0) {
+    cartelEstatico = true;
+    renderBannerMatrix();
+  }
+  else if (strncmp(cmd, "BANNER:SPEED:", 13) == 0) {
+    cartelVelocidad = atoi(cmd + 13);
+    if (cartelVelocidad < 1) cartelVelocidad = 1;
+    if (cartelVelocidad > 5) cartelVelocidad = 5;
+  }
+  else if (strncmp(cmd, "BANNER:SCROLL:L2R", 17) == 0) {
+    cartelEstatico = false;
+    cartelIzqADer = true;
+  }
+  else if (strncmp(cmd, "BANNER:SCROLL:R2L", 17) == 0) {
+    cartelEstatico = false;
+    cartelIzqADer = false;
+  }
+  else if (strncmp(cmd, "CLK:", 4) == 0) {
+    // Formato CLK:HH:MM:SS
+    char temp[32];
+    strncpy(temp, cmd + 4, sizeof(temp));
+    char* token = strtok(temp, ":");
+    if (token) rtcHoras = atoi(token);
+    token = strtok(NULL, ":");
+    if (token) rtcMinutos = atoi(token);
+    token = strtok(NULL, ":");
+    if (token) rtcSegundos = atoi(token);
+    if (modoCartel == 1) renderClockMatrix();
+  }
+  else if (strncmp(cmd, "L:", 2) == 0) {
+    puntosLocal = atoi(cmd + 2);
+    modoCartel = 0;
+    renderReticleMatrix();
+  }
+  else if (strncmp(cmd, "V:", 2) == 0) {
+    puntosVisitante = atoi(cmd + 2);
+    modoCartel = 0;
+    renderReticleMatrix();
+  }
+  else if (strncmp(cmd, "T:", 2) == 0) {
+    char temp[32];
+    strncpy(temp, cmd + 2, sizeof(temp));
+    char* token = strtok(temp, ":");
+    if (token) minutosTiempo = atoi(token);
+    token = strtok(NULL, ":");
+    if (token) segundosTiempo = atoi(token);
+    token = strtok(NULL, ":");
+    if (token) strncpy(periodoActual, token, sizeof(periodoActual));
+    if (modoCartel == 0) renderReticleMatrix();
+  }
+  else if (strncmp(cmd, "CMD:SPORT:", 10) == 0) {
+    strncpy(deporteActual, cmd + 10, sizeof(deporteActual) - 1);
+    deporteActual[sizeof(deporteActual) - 1] = '\0';
+    if (modoCartel == 0) renderReticleMatrix();
+  }
+  else if (strncmp(cmd, "CMD:SHOT_CLOCK_RESET:", 21) == 0) {
+    shotClockSegundos = atoi(cmd + 21);
+    if (modoCartel == 0) renderReticleMatrix();
+  }
+  else if (strncmp(cmd, "CMD:HORN", 8) == 0) {
+    digitalWrite(PIN_HORN_RELAY, HIGH);
+    bocinaActiva = true;
+    finBocinaMillis = millis() + 2000;
+  }
+}
+
+void setup() {
+  Serial.begin(115200); // 115200 para ESP32 / 9600 para Arduino
+  pinMode(PIN_HORN_RELAY, OUTPUT);
+  digitalWrite(PIN_HORN_RELAY, LOW);
+
+  FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
+  FastLED.setBrightness(DEFAULT_BRIGHT);
+  FastLED.clear();
+  renderReticleMatrix();
+}
+
+void loop() {
+  // Apagado automático de bocina
+  if (bocinaActiva && millis() >= finBocinaMillis) {
+    digitalWrite(PIN_HORN_RELAY, LOW);
+    bocinaActiva = false;
+  }
+
+  // Animación del cartel en segundo plano si está en modo desplazamiento
+  if (modoCartel == 2 && !cartelEstatico) {
+    const int intervalosVelocidad[6] = { 180, 180, 145, 110, 85, 60 };
+    int interval = intervalosVelocidad[cartelVelocidad];
+    if (millis() - ultimoScrollMillis >= interval) {
+      ultimoScrollMillis = millis();
+      scrollOffset++;
+      renderBannerMatrix();
+    }
+  }
+
+  // Refresco continuo a 30 FPS cuando hay efectos animados dinámicos activos (ondas, pulsos, fuego)
+  if (hasActiveAnimatedEffects()) {
+    if (millis() - ultimoFrameMillis >= 33) {
+      ultimoFrameMillis = millis();
+      renderDisplay();
+    }
+  }
+
+  // Recepción de comandos serie
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\\n' || c == '\\r') {
+      if (rxIndex > 0) {
+        rxBuffer[rxIndex] = '\\0';
+        procesarComando(rxBuffer);
+        rxIndex = 0;
+      }
+    } else if (rxIndex < sizeof(rxBuffer) - 1) {
+      rxBuffer[rxIndex++] = c;
+    }
+  }
+}
+`;
 
 export const ARDUINO_COMPLETE_SKETCH = `/*
  * ==================================================================================
@@ -109,396 +967,56 @@ char periodoActual[4] = "1";
 bool cronometroActivo = false;
 char direccionTiempo = 'D'; // 'D' = Descendente (Regresiva), 'U' = Ascendente
 
-unsigned long ultimoMillisCronometro = 0;
-unsigned long ultimoMillisShotClock = 0;
-unsigned long finBocinaMillis = 0;
-bool bocinaActiva = false;
-
 // Buffer de Recepción Serie
-char bufferSerie[64];
-byte indiceBuffer = 0;
-
-// Declaración de funciones
-void leerComandosSerie();
-void procesarComando(char* cmd);
-void actualizarDisplayTablero();
-void mostrarHoraRTC();
-void activarBocina(unsigned long duracionMs);
-void reproducirPistaMP3(byte pista);
-void enviarComandoDFP(byte cmd, byte param1, byte param2);
+char rxBuffer[64];
+byte rxIndex = 0;
 
 void setup() {
-  // Inicializar Comunicación Serie (9600 baudios para HC-05 / USB)
   Serial.begin(9600);
   mp3Serial.begin(9600);
   
-  // Pines de salida
   pinMode(PIN_HORN_RELAY, OUTPUT);
   pinMode(PIN_BUZZER, OUTPUT);
-  digitalWrite(PIN_HORN_RELAY, LOW); // Relé apagado
+  digitalWrite(PIN_HORN_RELAY, LOW);
   digitalWrite(PIN_BUZZER, LOW);
 
-  // Inicializar displays MAX7219
+  // Inicializar Displays MAX7219
   for (int i = 0; i < 4; i++) {
     lc.shutdown(i, false);
-    lc.setIntensity(i, 12); // Brillo (0 a 15)
+    lc.setIntensity(i, 12);
     lc.clearDisplay(i);
   }
 
   // Inicializar RTC DS3231
+  Wire.begin();
   if (rtc.begin()) {
     rtcPresente = true;
     if (rtc.lostPower()) {
-      rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+      rtc.adjust(DateTime(2026, 1, 1, 12, 0, 0));
     }
-  } else {
-    rtcPresente = false;
-    Serial.println(F("[AVISO] Modulo RTC DS3231 no detectado en bus I2C"));
   }
-
-  // Configurar volumen de DFPlayer Mini (Volumen: 25 / 30)
-  enviarComandoDFP(0x06, 0x00, 25);
-
-  // Sonido de arranque corto
-  activarBocina(150);
-  actualizarDisplayTablero();
-  
-  Serial.println(F("OK:TABLERO_GIMNASIO_INICIADO"));
 }
 
 void loop() {
-  // 1. Lectura de Comandos Serie sin bloqueo
-  leerComandosSerie();
-
-  unsigned long actualMillis = millis();
-
-  // 2. Control de tiempo cronómetro principal
-  if (modoActual == MODO_TABLERO && cronometroActivo) {
-    if (actualMillis - ultimoMillisCronometro >= 1000) {
-      ultimoMillisCronometro = actualMillis;
-      
-      if (direccionTiempo == 'D') {
-        if (segundosTiempo > 0) {
-          segundosTiempo--;
-        } else if (minutosTiempo > 0) {
-          minutosTiempo--;
-          segundosTiempo = 59;
-        } else {
-          // ¡FIN DEL TIEMPO DE JUEGO!
-          cronometroActivo = false;
-          activarBocina(2500); // 2.5 seg de bocina/chicharra
-          reproducirPistaMP3(1); // Pista 1: Chicharra final en DFPlayer
-          Serial.println(F("EVT:TIEMPO_CERO"));
-        }
-      } else { // Ascendente
-        segundosTiempo++;
-        if (segundosTiempo >= 60) {
-          segundosTiempo = 0;
-          minutosTiempo++;
-        }
-      }
-      actualizarDisplayTablero();
-    }
-  }
-
-  // 3. Control de Reloj de Posesión (24 segundos)
-  if (modoActual == MODO_TABLERO && shotClockActivo) {
-    if (actualMillis - ultimoMillisShotClock >= 1000) {
-      ultimoMillisShotClock = actualMillis;
-      if (shotClockSegundos > 0) {
-        shotClockSegundos--;
-      } else {
-        shotClockActivo = false;
-        activarBocina(1000); // 1 seg de bocina de tiro
-        reproducirPistaMP3(2); // Pista 2: Bocina shot clock
-        Serial.println(F("EVT:SHOT_CLOCK_CERO"));
-      }
-      actualizarDisplayTablero();
-    }
-  }
-
-  // 4. Modo Reloj RTC
-  if (modoActual == MODO_RELOJ_RTC) {
-    static unsigned long ultimoRefrescoReloj = 0;
-    if (actualMillis - ultimoRefrescoReloj >= 1000) {
-      ultimoRefrescoReloj = actualMillis;
-      mostrarHoraRTC();
-    }
-  }
-
-  // 5. Apagar bocina cuando expire su temporizador
-  if (bocinaActiva && actualMillis >= finBocinaMillis) {
-    digitalWrite(PIN_HORN_RELAY, LOW);
-    digitalWrite(PIN_BUZZER, LOW);
-    bocinaActiva = false;
-  }
-}
-
-// --- PROCESAMIENTO DE COMANDOS SERIE ---
-void leerComandosSerie() {
-  while (Serial.available() > 0) {
-    char c = Serial.read();
+  while (Serial.available()) {
+    char c = (char)Serial.read();
     if (c == '\\n' || c == '\\r') {
-      if (indiceBuffer > 0) {
-        bufferSerie[indiceBuffer] = '\\0';
-        procesarComando(bufferSerie);
-        indiceBuffer = 0;
+      if (rxIndex > 0) {
+        rxBuffer[rxIndex] = '\\0';
+        procesarComando(rxBuffer);
+        rxIndex = 0;
       }
-    } else {
-      if (indiceBuffer < sizeof(bufferSerie) - 1) {
-        bufferSerie[indiceBuffer++] = c;
-      }
+    } else if (rxIndex < sizeof(rxBuffer) - 1) {
+      rxBuffer[rxIndex++] = c;
     }
   }
 }
 
 void procesarComando(char* cmd) {
-  // Comandos de Control de Tiempo
-  if (strcmp(cmd, "CMD:START") == 0) {
-    cronometroActivo = true;
-    ultimoMillisCronometro = millis();
-    Serial.println(F("ACK:START"));
-  }
-  else if (strcmp(cmd, "CMD:PAUSE") == 0) {
-    cronometroActivo = false;
-    Serial.println(F("ACK:PAUSE"));
-  }
-  else if (strcmp(cmd, "CMD:RESET") == 0) {
-    cronometroActivo = false;
-    Serial.println(F("ACK:RESET"));
-    actualizarDisplayTablero();
-  }
-  else if (strcmp(cmd, "CMD:HORN") == 0) {
-    activarBocina(2000); // 2 segundos
-    reproducirPistaMP3(1);
-    Serial.println(F("ACK:HORN"));
-  }
-  
-  // Efectos de Sonido y Música de Estadio Multideporte (DFPlayer Mini / Relé)
-  else if (strcmp(cmd, "CMD:SND:HORN") == 0) {
-    activarBocina(2000);
-    reproducirPistaMP3(1); // Pista 1: Chicharra principal
-  }
-  else if (strncmp(cmd, "CMD:SND:SHOT_WARN", 17) == 0 || strcmp(cmd, "CMD:SND:SHOT_WARN") == 0) {
-    // Aviso sonoro de últimos 5 segundos de posesión (5s, 4s, 3s, 2s, 1s)
-    reproducirPistaMP3(23); // Pista 23: Beep agudo de aviso de 24s
-  }
-  else if (strcmp(cmd, "CMD:SND:SHOT_EXPIRED") == 0 || strcmp(cmd, "CMD:SHOT_CLOCK_EXPIRED") == 0) {
-    activarBocina(1000); // 1 segundo bocina de tablero
-    reproducirPistaMP3(2); // Pista 2: Bocina violación de 24s
-    Serial.println(F("ACK:SHOT_CLOCK_EXPIRED"));
-  }
-  else if (strcmp(cmd, "CMD:SND:CHARGE") == 0) {
-    reproducirPistaMP3(3); // Pista 3: Fanfarria Charge
-  }
-  else if (strcmp(cmd, "CMD:SND:DEFENSE") == 0) {
-    reproducirPistaMP3(4); // Pista 4: Ritmo Defense
-  }
-  else if (strcmp(cmd, "CMD:SND:TRIPLE") == 0) {
-    reproducirPistaMP3(5); // Pista 5: Sonido Triple
-  }
-  else if (strcmp(cmd, "CMD:SND:WHISTLE") == 0) {
-    reproducirPistaMP3(6); // Pista 6: Silbato arbitro
-  }
-  else if (strcmp(cmd, "CMD:SND:TIMEOUT") == 0) {
-    activarBocina(600);
-    reproducirPistaMP3(7); // Pista 7: Tono Timeout
-  }
-  // Futsal / Fútbol
-  else if (strcmp(cmd, "CMD:SND:GOAL") == 0) {
-    activarBocina(2500);
-    reproducirPistaMP3(8); // Pista 8: Sirena de Gol + Euforia
-  }
-  else if (strcmp(cmd, "CMD:SND:OLE") == 0) {
-    reproducirPistaMP3(9); // Pista 9: Cantico Ole Ole Ole
-  }
-  else if (strcmp(cmd, "CMD:SND:DOUBLE_WHISTLE") == 0) {
-    reproducirPistaMP3(10); // Pista 10: Doble silbato falta
-  }
-  else if (strcmp(cmd, "CMD:SND:CARD") == 0) {
-    reproducirPistaMP3(11); // Pista 11: Alarma tarjeta/falta
-  }
-  // Vóley
-  else if (strcmp(cmd, "CMD:SND:SET_POINT") == 0) {
-    reproducirPistaMP3(12); // Pista 12: Fanfarria Set Point
-  }
-  else if (strcmp(cmd, "CMD:SND:ACE") == 0) {
-    reproducirPistaMP3(13); // Pista 13: Bloqueo / Ace
-  }
-  else if (strcmp(cmd, "CMD:SND:SERVE") == 0) {
-    reproducirPistaMP3(14); // Pista 14: Silbato de saque
-  }
-  else if (strcmp(cmd, "CMD:SND:ROTATION") == 0) {
-    reproducirPistaMP3(15); // Pista 15: Tono de rotacion
-  }
-  // Handball
-  else if (strcmp(cmd, "CMD:SND:HANDBALL_GOAL") == 0) {
-    activarBocina(1500);
-    reproducirPistaMP3(16); // Pista 16: Gol Handball
-  }
-  else if (strcmp(cmd, "CMD:SND:2MIN") == 0) {
-    reproducirPistaMP3(17); // Pista 17: Exclusion 2 minutos
-  }
-  else if (strcmp(cmd, "CMD:SND:PASSIVE") == 0) {
-    reproducirPistaMP3(18); // Pista 18: Aviso juego pasivo
-  }
-  // Entrenamiento / Gimnasio
-  else if (strcmp(cmd, "CMD:SND:COUNTDOWN") == 0) {
-    reproducirPistaMP3(19); // Pista 19: 3, 2, 1, GO!
-  }
-  else if (strcmp(cmd, "CMD:SND:BELL") == 0) {
-    reproducirPistaMP3(20); // Pista 20: Campana round boxeo
-  }
-  else if (strcmp(cmd, "CMD:SND:GONG") == 0) {
-    reproducirPistaMP3(21); // Pista 21: Gong descanso
-  }
-  else if (strcmp(cmd, "CMD:SND:APPLAUSE") == 0) {
-    reproducirPistaMP3(22); // Pista 22: Ovacion / Aplausos
-  }
-
-  // Reloj de Posesión (24s)
-  else if (strcmp(cmd, "CMD:SHOT_CLOCK_START") == 0) {
-    shotClockActivo = true;
-    ultimoMillisShotClock = millis();
-  }
-  else if (strcmp(cmd, "CMD:SHOT_CLOCK_PAUSE") == 0) {
-    shotClockActivo = false;
-  }
-  else if (strncmp(cmd, "CMD:SHOT_CLOCK_RESET:", 21) == 0) {
-    shotClockSegundos = atoi(cmd + 21);
-    actualizarDisplayTablero();
-  }
-
-  // Modos de Visualización
-  else if (strcmp(cmd, "CMD:MODE_SCOREBOARD") == 0) {
-    modoActual = MODO_TABLERO;
-    actualizarDisplayTablero();
-    Serial.println(F("ACK:MODE_SCOREBOARD"));
-  }
-  else if (strcmp(cmd, "CMD:MODE_CLOCK") == 0) {
-    modoActual = MODO_RELOJ_RTC;
-    mostrarHoraRTC();
-    Serial.println(F("ACK:MODE_CLOCK"));
-  }
-  
-  // Puntos Local (L:xx) y Visitante (V:xx)
-  else if (strncmp(cmd, "L:", 2) == 0) {
-    puntosLocal = atoi(cmd + 2);
-    actualizarDisplayTablero();
-  }
-  else if (strncmp(cmd, "V:", 2) == 0) {
-    puntosVisitante = atoi(cmd + 2);
-    actualizarDisplayTablero();
-  }
-  
-  // Tiempo y Periodo (T:MM:SS:Periodo:Direccion) -> Ejemplo: T:09:45:2:D
-  else if (strncmp(cmd, "T:", 2) == 0) {
-    char temp[32];
-    strncpy(temp, cmd + 2, sizeof(temp));
-    char* token = strtok(temp, ":");
-    if (token) minutosTiempo = atoi(token);
-    token = strtok(NULL, ":");
-    if (token) segundosTiempo = atoi(token);
-    token = strtok(NULL, ":");
-    if (token) strncpy(periodoActual, token, sizeof(periodoActual));
-    token = strtok(NULL, ":");
-    if (token) direccionTiempo = token[0];
-
-    actualizarDisplayTablero();
-  }
-
-  // Sincronización RTC (CLK:HH:MM:SS:DD:MM:YYYY)
-  else if (strncmp(cmd, "CLK:", 4) == 0) {
-    int h = 0, m = 0, s = 0, d = 1, mes = 1, y = 2026;
-    sscanf(cmd + 4, "%d:%d:%d:%d:%d:%d", &h, &m, &s, &d, &mes, &y);
-    if (rtcPresente) {
-      rtc.adjust(DateTime(y, mes, d, h, m, s));
-      Serial.println(F("ACK:RTC_SINCRONIZADO"));
-    }
-    if (modoActual == MODO_RELOJ_RTC) {
-      mostrarHoraRTC();
-    }
-  }
-
-  // Ajuste de Brillo (BRIGHT:0-100)
-  else if (strncmp(cmd, "BRIGHT:", 7) == 0) {
-    int brillo = map(atoi(cmd + 7), 0, 100, 0, 15);
-    for (int i = 0; i < 4; i++) {
-      lc.setIntensity(i, brillo);
-    }
-  }
-
-  // Cambio de Color Reloj RTC (CLKCLR:CYAN/GREEN/AMBER/RED/BLUE/PURPLE/WHITE/LIME)
-  else if (strncmp(cmd, "CLKCLR:", 7) == 0) {
-    // Comando para matrices LED RGB (WS2812B / P10 Full Color)
-    Serial.print(F("ACK:CLOCK_COLOR:"));
-    Serial.println(cmd + 7);
-  }
-}
-
-// --- ACTUALIZACIÓN DE DISPLAYS FÍSICOS (MAX7219) ---
-void actualizarDisplayTablero() {
-  if (modoActual != MODO_TABLERO) return;
-
-  // Módulo 0: Puntos Local (2 dígitos)
-  lc.setDigit(0, 0, puntosLocal / 10, false);
-  lc.setDigit(0, 1, puntosLocal % 10, false);
-
-  // Módulo 1: Puntos Visitante (2 dígitos)
-  lc.setDigit(1, 0, puntosVisitante / 10, false);
-  lc.setDigit(1, 1, puntosVisitante % 10, false);
-
-  // Módulo 2: Minutos y Segundos (MM:SS)
-  lc.setDigit(2, 0, minutosTiempo / 10, false);
-  lc.setDigit(2, 1, minutosTiempo % 10, true); // Punto parpadeante
-  lc.setDigit(2, 2, segundosTiempo / 10, false);
-  lc.setDigit(2, 3, segundosTiempo % 10, false);
-
-  // Módulo 3: Periodo y Reloj de 24s
-  if (periodoActual[0] >= '0' && periodoActual[0] <= '9') {
-    lc.setDigit(3, 0, periodoActual[0] - '0', false);
-  } else {
-    lc.setChar(3, 0, 'E', false);
-  }
-  lc.setDigit(3, 2, shotClockSegundos / 10, false);
-  lc.setDigit(3, 3, shotClockSegundos % 10, false);
-}
-
-void mostrarHoraRTC() {
-  if (!rtcPresente) return;
-  DateTime now = rtc.now();
-
-  lc.setDigit(2, 0, now.hour() / 10, false);
-  lc.setDigit(2, 1, now.hour() % 10, true);
-  lc.setDigit(2, 2, now.minute() / 10, false);
-  lc.setDigit(2, 3, now.minute() % 10, false);
-
-  lc.setDigit(3, 0, now.second() / 10, false);
-  lc.setDigit(3, 1, now.second() % 10, false);
-}
-
-void activarBocina(unsigned long duracionMs) {
-  digitalWrite(PIN_HORN_RELAY, HIGH);
-  digitalWrite(PIN_BUZZER, HIGH);
-  bocinaActiva = true;
-  finBocinaMillis = millis() + duracionMs;
-}
-
-// --- COMUNICACIÓN CON DFPLAYER MINI (MÚSICA Y EFECTOS) ---
-void reproducirPistaMP3(byte pista) {
-  enviarComandoDFP(0x03, 0x00, pista); // Comando 0x03: Reproducir pista específica en carpeta raíz
-}
-
-void enviarComandoDFP(byte cmd, byte param1, byte param2) {
-  byte paquete[10] = { 0x7E, 0xFF, 0x06, cmd, 0x00, param1, param2, 0x00, 0x00, 0xEF };
-  
-  // Cálculo de Checksum
-  int checksum = 0 - (0xFF + 0x06 + cmd + 0x00 + param1 + param2);
-  paquete[7] = (byte)(checksum >> 8);
-  paquete[8] = (byte)(checksum & 0xFF);
-  
-  for (int i = 0; i < 10; i++) {
-    mp3Serial.write(paquete[i]);
+  if (strncmp(cmd, "CMD:HORN", 8) == 0) {
+    digitalWrite(PIN_HORN_RELAY, HIGH);
+    delay(1500);
+    digitalWrite(PIN_HORN_RELAY, LOW);
   }
 }
 `;

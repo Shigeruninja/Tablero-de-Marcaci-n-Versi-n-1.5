@@ -27,6 +27,7 @@ interface Props {
   onResetShotClock: (seconds: number) => void;
   onSetSport: (sport: SportType) => void;
   onOpenKeyConfig?: () => void;
+  onOpenLedConfig?: () => void;
   customSounds?: CustomSoundItem[];
   sportTemplates?: SportSoundTemplates;
   soundOverrides?: SoundEventOverrides;
@@ -46,6 +47,7 @@ export const ScoreboardPanel: React.FC<Props> = ({
   onResetShotClock,
   onSetSport,
   onOpenKeyConfig,
+  onOpenLedConfig,
   customSounds = [],
   sportTemplates,
   soundOverrides,
@@ -70,14 +72,15 @@ export const ScoreboardPanel: React.FC<Props> = ({
   };
 
   const handleApplyEditTime = () => {
-    const mins = Math.max(0, Math.min(99, parseInt(editMinutes, 10) || 0));
+    const mins = Math.max(0, Math.min(999, parseInt(editMinutes, 10) || 0));
     const secs = Math.max(0, Math.min(59, parseInt(editSeconds, 10) || 0));
     const total = mins * 60 + secs;
     updateState({ timerSeconds: total, targetSeconds: total });
     setIsEditingTime(false);
     
     // Sincronizar con Arduino
-    const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    const minsStr = mins >= 100 ? String(mins) : String(mins).padStart(2, '0');
+    const formatted = `${minsStr}:${String(secs).padStart(2, '0')}`;
     const modeFlag = state.timerMode === 'down' ? 'D' : 'U';
     hardware.sendCommand(`T:${formatted}:${state.period}:${modeFlag}`);
   };
@@ -88,7 +91,8 @@ export const ScoreboardPanel: React.FC<Props> = ({
     updateState({ timerSeconds: total });
     const mins = Math.floor(total / 60);
     const secs = total % 60;
-    const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    const minsStr = mins >= 100 ? String(mins) : String(mins).padStart(2, '0');
+    const formatted = `${minsStr}:${String(secs).padStart(2, '0')}`;
     const modeFlag = state.timerMode === 'down' ? 'D' : 'U';
     hardware.sendCommand(`T:${formatted}:${state.period}:${modeFlag}`);
   };
@@ -98,7 +102,8 @@ export const ScoreboardPanel: React.FC<Props> = ({
     updateState({ timerSeconds: total });
     const mins = Math.floor(total / 60);
     const secs = total % 60;
-    const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    const minsStr = mins >= 100 ? String(mins) : String(mins).padStart(2, '0');
+    const formatted = `${minsStr}:${String(secs).padStart(2, '0')}`;
     const modeFlag = state.timerMode === 'down' ? 'D' : 'U';
     hardware.sendCommand(`T:${formatted}:${state.period}:${modeFlag}`);
   };
@@ -226,16 +231,29 @@ export const ScoreboardPanel: React.FC<Props> = ({
           </button>
         </div>
 
-        {onOpenKeyConfig && (
-          <button
-            onClick={onOpenKeyConfig}
-            className="ml-auto bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/40 px-3 py-1.5 rounded-lg font-stadium font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap"
-            title="Configuración de Macros de Teclado para PC"
-          >
-            <Keyboard className="w-3.5 h-3.5 text-amber-400" />
-            <span>TECLADO PC</span>
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-1.5 flex-nowrap">
+          {onOpenLedConfig && (
+            <button
+              onClick={onOpenLedConfig}
+              className="bg-gradient-to-r from-amber-500/20 via-pink-500/20 to-cyan-500/20 hover:from-amber-500/30 hover:to-cyan-500/30 text-amber-300 border border-amber-400/50 px-3 py-1.5 rounded-lg font-stadium font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap shadow-sm group"
+              title="Personalizar colores y efectos LED dinámicos (ondas, pulsos, fuego)"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 group-hover:rotate-12 transition-transform" />
+              <span>ILUMINACIÓN LED</span>
+            </button>
+          )}
+
+          {onOpenKeyConfig && (
+            <button
+              onClick={onOpenKeyConfig}
+              className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/40 px-3 py-1.5 rounded-lg font-stadium font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap"
+              title="Configuración de Macros de Teclado para PC"
+            >
+              <Keyboard className="w-3.5 h-3.5 text-amber-400" />
+              <span>TECLADO PC</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* MODAL DE TIME-OUT OFICIAL ACTIVO (60s REGLAMENTARIO) */}
@@ -310,24 +328,54 @@ export const ScoreboardPanel: React.FC<Props> = ({
               <option value="up">⏱️ Progresiva (00:00 a MM:SS)</option>
             </select>
 
-            {/* Selector de Periodo */}
+            {/* Selector de Periodo con terminología según deporte */}
             <select
               value={state.period}
-              onChange={(e) => updateState({ period: e.target.value })}
+              onChange={(e) => {
+                const newPer = e.target.value;
+                updateState({ period: newPer });
+                const mins = Math.floor(Math.max(0, state.timerSeconds) / 60);
+                const secs = Math.max(0, state.timerSeconds) % 60;
+                const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+                const modeFlag = state.timerMode === 'down' ? 'D' : 'U';
+                hardware.sendCommand(`T:${formatted}:${newPer}:${modeFlag}`);
+              }}
               className="bg-slate-950 border border-slate-700 text-amber-400 font-bold text-xs rounded-lg px-2.5 py-1.5 focus:border-amber-500 outline-none"
             >
-              <option value="1">1° Cuarto / Periodo</option>
-              <option value="2">2° Cuarto / Periodo</option>
-              <option value="3">3° Cuarto / Periodo</option>
-              <option value="4">4° Cuarto / Periodo</option>
-              <option value="1T">1° Tiempo (Fútbol/Futsal/Handball)</option>
-              <option value="2T">2° Tiempo (Fútbol/Futsal/Handball)</option>
-              <option value="E">Tiempo Extra / Alargue (TE)</option>
-              <option value="S1">Set 1</option>
-              <option value="S2">Set 2</option>
-              <option value="S3">Set 3</option>
-              <option value="S4">Set 4</option>
-              <option value="S5">Set 5 (Tie-break)</option>
+              {state.sport === 'basketball' && (
+                <>
+                  <option value="1">1° Cuarto (1C)</option>
+                  <option value="2">2° Cuarto (2C)</option>
+                  <option value="3">3° Cuarto (3C)</option>
+                  <option value="4">4° Cuarto (4C)</option>
+                  <option value="TE">Tiempo Extra (OT)</option>
+                </>
+              )}
+              {state.sport === 'volleyball' && (
+                <>
+                  <option value="S1">1° Set (Set 1)</option>
+                  <option value="S2">2° Set (Set 2)</option>
+                  <option value="S3">3° Set (Set 3)</option>
+                  <option value="S4">4° Set (Set 4)</option>
+                  <option value="S5">5° Set (Tie-break)</option>
+                </>
+              )}
+              {(state.sport === 'soccer' || state.sport === 'futsal' || state.sport === 'handball') && (
+                <>
+                  <option value="1T">1° Tiempo</option>
+                  <option value="2T">2° Tiempo</option>
+                  <option value="TE">Tiempo Extra / Alargue</option>
+                </>
+              )}
+              {state.sport === 'custom' && (
+                <>
+                  <option value="1">1° Periodo</option>
+                  <option value="2">2° Periodo</option>
+                  <option value="3">3° Periodo</option>
+                  <option value="4">4° Periodo</option>
+                  <option value="TE">Tiempo Extra</option>
+                </>
+              )}
             </select>
           </div>
         </div>
@@ -348,10 +396,10 @@ export const ScoreboardPanel: React.FC<Props> = ({
                   <input
                     type="number"
                     min="0"
-                    max="99"
+                    max="999"
                     value={editMinutes}
                     onChange={(e) => setEditMinutes(e.target.value)}
-                    className="w-24 text-center font-digital text-4xl sm:text-5xl font-bold bg-slate-900 border-2 border-amber-500 rounded-xl text-amber-400 p-2 outline-none"
+                    className="w-28 text-center font-digital text-4xl sm:text-5xl font-bold bg-slate-900 border-2 border-amber-500 rounded-xl text-amber-400 p-2 outline-none"
                   />
                 </div>
 
@@ -394,9 +442,9 @@ export const ScoreboardPanel: React.FC<Props> = ({
                 
                 {/* Bloque MINUTOS */}
                 <div className="flex flex-col items-center">
-                  <div className="bg-slate-950/90 border border-amber-500/30 rounded-xl px-4 py-2 sm:px-6 sm:py-3 shadow-2xl">
+                  <div className="bg-slate-950/90 border border-amber-500/30 rounded-xl px-4 py-2 sm:px-6 sm:py-3 shadow-2xl min-w-[100px] text-center">
                     <span className="font-digital text-6xl sm:text-8xl font-black text-amber-400 glow-amber tracking-widest">
-                      {String(currentMinutes).padStart(2, '0')}
+                      {currentMinutes >= 100 ? String(currentMinutes) : String(currentMinutes).padStart(2, '0')}
                     </span>
                   </div>
                   <span className="text-[11px] sm:text-xs font-mono font-black text-amber-400 uppercase tracking-widest mt-2 bg-amber-950/60 border border-amber-500/30 px-2.5 py-0.5 rounded-md">

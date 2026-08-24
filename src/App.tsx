@@ -36,6 +36,14 @@ import { KeyboardHudOverlay } from './components/KeyboardHudOverlay';
 import { UserManualPanel } from './components/UserManualPanel';
 import { AppDownloadPanel } from './components/AppDownloadPanel';
 import { CustomSoundManagerModal } from './components/CustomSoundManagerModal';
+import { LedLightingConfigModal } from './components/LedLightingConfigModal';
+import { 
+  ScoreboardLedLighting, LedComponentId, LedComponentConfig 
+} from './types';
+import { 
+  getStoredLedLighting, saveStoredLedLighting, DEFAULT_LED_LIGHTING, 
+  LED_PRESETS, buildArduinoLedCommand 
+} from './utils/ledEffects';
 import { 
   Trophy, Clock, MessageSquare, ShieldCheck, Cpu, Volume2, VolumeX, 
   Wifi, Bluetooth, Usb, Radio, Sparkles, Keyboard, BookOpen, Download,
@@ -88,8 +96,13 @@ export default function App() {
     timeoutRunning: false,
     timeoutTeam: null,
     marqueeText: 'BIENVENIDOS AL GIMNASIO',
+    marqueeLine2: 'TORNEO INTERCOLEGIAL',
+    bannerModeType: 'two_lines',
     brightness: 80,
-    bannerAnimation: 'scroll',
+    bannerAnimation: 'static',
+    scrollDirection: 'left_to_right',
+    bannerSpeed: 3,
+    bannerColor: 'amber',
     autoSyncRtc: true,
     clockColor: 'cyan',
     connectionType: 'simulation',
@@ -97,6 +110,7 @@ export default function App() {
     baudRate: 9600,
     wifiIp: '192.168.1.50',
     soundEnabled: true,
+    ledLighting: getStoredLedLighting(),
   });
 
   const [logs, setLogs] = useState<LogEntry[]>([
@@ -111,7 +125,11 @@ export default function App() {
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isKeyConfigModalOpen, setIsKeyConfigModalOpen] = useState(false);
   const [isCustomSoundModalOpen, setIsCustomSoundModalOpen] = useState(false);
+  const [isLedModalOpen, setIsLedModalOpen] = useState(false);
   
+  // Iluminación LED Dinámica y Efectos
+  const [ledLighting, setLedLighting] = useState<ScoreboardLedLighting>(getStoredLedLighting());
+
   // Sonidos Propios, Plantillas por Deporte y Mapeo de Eventos
   const [customSounds, setCustomSounds] = useState<CustomSoundItem[]>(getStoredCustomSounds());
   const [sportTemplates, setSportTemplates] = useState<SportSoundTemplates>(getStoredSportTemplates());
@@ -129,6 +147,37 @@ export default function App() {
     seconds: '00',
     date: '--/--/----'
   });
+
+  // Guardar y Aplicar Configuración de Iluminación LED
+  const handleUpdateLedLighting = (updated: ScoreboardLedLighting) => {
+    setLedLighting(updated);
+    setState((prev) => ({ ...prev, ledLighting: updated }));
+    saveStoredLedLighting(updated);
+  };
+
+  const handleApplyLedPreset = (presetId: string) => {
+    const preset = LED_PRESETS.find((p) => p.id === presetId);
+    if (preset) {
+      const updated: ScoreboardLedLighting = {
+        ...preset.lighting,
+        activePreset: presetId
+      };
+      handleUpdateLedLighting(updated);
+      
+      // Sincronizar todos los elementos con Arduino
+      const compIds: LedComponentId[] = ['scoreLocal', 'scoreVisitor', 'period', 'timer', 'possession', 'banner', 'clock', 'border'];
+      compIds.forEach((cid) => {
+        const cfg = updated[cid];
+        if (cfg) {
+          hardware.sendCommand(buildArduinoLedCommand(cid, cfg));
+        }
+      });
+    }
+  };
+
+  const handleSyncLedWithArduino = (componentId: LedComponentId, config: LedComponentConfig) => {
+    hardware.sendCommand(buildArduinoLedCommand(componentId, config));
+  };
 
   // Guardar Sonidos Propios
   const handleSaveCustomSounds = (updated: CustomSoundItem[]) => {
@@ -272,7 +321,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [getBuenosAiresTime, state.appMode, state.autoSyncRtc]);
 
-  // Formato mm:ss o ss.d si queda menos de 1 minuto
+  // Formato mm:ss o mmm:ss (hasta 3 dígitos de minutos) o ss.d si queda menos de 1 minuto
   const formatTimer = (totalSeconds: number, tenths = 0, showTenths = false) => {
     if (showTenths && totalSeconds < 60) {
       const secs = Math.max(0, totalSeconds);
@@ -280,7 +329,8 @@ export default function App() {
     }
     const mins = Math.floor(Math.max(0, totalSeconds) / 60);
     const secs = Math.max(0, totalSeconds) % 60;
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    const minsStr = mins >= 100 ? String(mins) : String(mins).padStart(2, '0');
+    return `${minsStr}:${String(secs).padStart(2, '0')}`;
   };
 
   // Enviar estado de cronómetro a Arduino
@@ -597,6 +647,7 @@ export default function App() {
 
   const handleSetSport = (sport: SportType) => {
     if (state.soundEnabled) sounds.playClick();
+    hardware.sendCommand(`CMD:SPORT:${sport.toUpperCase()}`);
     if (sport === 'basketball') {
       setState((prev) => ({
         ...prev,
@@ -706,7 +757,17 @@ export default function App() {
       hardware.sendCommand('CMD:MODE_SCOREBOARD');
       sendTimerStateToArduino(state.timerSeconds, state.period, state.timerMode);
     } else if (mode === 'banner') {
-      hardware.sendCommand(`MSG:${state.marqueeText}`);
+      hardware.sendCommand('MODE:BANNER');
+      const l1 = state.marqueeText || 'BIENVENIDOS';
+      const l2 = state.marqueeLine2 || 'AL GIMNASIO';
+      hardware.sendCommand(`MSG:${l1}|${l2}`);
+      hardware.sendCommand(`BANNER:SPEED:${state.bannerSpeed || 3}`);
+      if (state.bannerAnimation === 'static') {
+        hardware.sendCommand('BANNER:STATIC');
+      } else {
+        const dir = state.scrollDirection === 'left_to_right' ? 'L2R' : 'R2L';
+        hardware.sendCommand(`BANNER:SCROLL:${dir}`);
+      }
     }
   };
 
@@ -962,6 +1023,16 @@ export default function App() {
               <span className="hidden lg:inline">SONIDOS & PLANTILLAS</span>
             </button>
 
+            {/* Botón Configuración de Iluminación LED Dinámica */}
+            <button
+              onClick={() => setIsLedModalOpen(true)}
+              className="px-3 py-2 rounded-xl border flex items-center space-x-1.5 transition font-stadium font-bold text-xs bg-gradient-to-r from-amber-500/20 via-pink-500/20 to-cyan-500/20 hover:from-amber-500/30 hover:to-cyan-500/30 border-amber-400/50 text-amber-300 shadow-md group"
+              title="Personalizar colores independientes y efectos LED (ondas, pulsos, fuego)"
+            >
+              <Sparkles className="w-4 h-4 text-amber-400 group-hover:rotate-12 transition-transform" />
+              <span className="hidden sm:inline">EFECTOS LED</span>
+            </button>
+
             {/* Botón Rápido Descarga e Instalación (Win11 / Android) */}
             <button
               onClick={() => handleSetAppMode('downloads')}
@@ -1023,6 +1094,8 @@ export default function App() {
           formatTimer={formatTimer}
           onSetBrightness={handleSetBrightness}
           onSetClockColor={handleSetClockColor}
+          lighting={ledLighting}
+          onOpenLedConfig={() => setIsLedModalOpen(true)}
         />
 
         {/* HUD DE GUÍA DE ATRIBUTOS Y MACROS DE TECLADO */}
@@ -1136,6 +1209,7 @@ export default function App() {
             onResetShotClock={handleResetShotClock}
             onSetSport={handleSetSport}
             onOpenKeyConfig={() => setIsKeyConfigModalOpen(true)}
+            onOpenLedConfig={() => setIsLedModalOpen(true)}
             customSounds={customSounds}
             sportTemplates={sportTemplates}
             soundOverrides={soundOverrides}
@@ -1195,6 +1269,16 @@ export default function App() {
         onSaveShortcuts={handleSaveShortcuts}
         enabled={keyboardShortcutsEnabled}
         onToggleEnabled={handleToggleShortcutsEnabled}
+      />
+
+      {/* MODAL DE GESTIÓN DE ILUMINACIÓN Y EFECTOS LED (ONDAS, PULSOS, FUEGO) */}
+      <LedLightingConfigModal
+        isOpen={isLedModalOpen}
+        onClose={() => setIsLedModalOpen(false)}
+        lighting={ledLighting}
+        onUpdateLighting={handleUpdateLedLighting}
+        onApplyPreset={handleApplyLedPreset}
+        onSyncWithArduino={handleSyncLedWithArduino}
       />
 
       {/* MODAL DE GESTIÓN DE SONIDOS PROPIOS, BOTONERAS POR DEPORTE Y MP3 */}

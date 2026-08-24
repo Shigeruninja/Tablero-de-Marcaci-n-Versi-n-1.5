@@ -74,12 +74,21 @@ export interface ScoreboardState {
   
   // Cartel / Banner / Mensajes
   marqueeText: string;
+  marqueeLine2?: string; // Segundo renglón para modo 2 líneas
+  bannerModeType?: 'two_lines' | 'single_line'; // 2 renglones o 1 renglón
   brightness: number; // 0 a 100
   bannerAnimation: 'scroll' | 'static' | 'flash';
+  bannerFontSize?: '3x5' | '4x6' | '5x7'; // Tamaño de fuente del cartel (3x5 compacta, 4x6 media, 5x7 estándar)
+  scrollDirection?: 'left_to_right' | 'right_to_left'; // Opción de desplazamiento: izquierda a derecha o derecha a izquierda
+  bannerSpeed?: number; // Velocidad de desplazamiento (ms o nivel 1-5)
+  bannerColor?: ClockColor; // Color de las letras del cartel
   
   // Reloj RTC
   autoSyncRtc: boolean;
   clockColor: ClockColor;
+  
+  // Iluminación LED Dinámica y Efectos por Componente
+  ledLighting?: ScoreboardLedLighting;
   
   // Conexión
   connectionType: ConnectionType;
@@ -236,3 +245,56 @@ export interface CodeAuditItem {
   codeSnippetFixed?: string;
   status: 'fixed' | 'improved' | 'ready';
 }
+
+// ---------------------------------------------------------------------------
+// Iluminación LED Dinámica y Efectos por Componente
+// ---------------------------------------------------------------------------
+
+export type LedColorEffect = 
+  | 'solid'         // Color estático
+  | 'rainbow'       // Onda arcoíris continua
+  | 'pulse'         // Respiración / Pulso suave
+  | 'color_cycle'   // Ciclo cromático rotativo
+  | 'neon'          // Neón vibrante / Shimmer
+  | 'fire'          // Fuego / Llama cálida
+  | 'strobe'        // Flash / Alerta
+  | 'dual_gradient'; // Gradiente bicolor desplazable
+
+export type LedComponentId = 
+  | 'scoreLocal'    // Tanteador Local (5x7)
+  | 'scoreVisitor'  // Tanteador Visitante (5x7)
+  | 'period'        // Texto de Periodo / Etapa Central (3x5)
+  | 'timer'         // Cronómetro Principal HH:MM:SS (4x6)
+  | 'possession'    // Indicadores de Posesión de Balón
+  | 'banner'        // Cartel de Mensajes en modo Banner
+  | 'clock'         // Reloj RTC
+  | 'border';       // Borde / Acentos decorativos de la retícula
+
+export interface LedComponentConfig {
+  color: string;           // Color HEX primario (ej: '#00d2ff')
+  secondaryColor?: string; // Color HEX secundario para gradientes
+  effect: LedColorEffect;  // Tipo de animación
+  speed: number;           // 1 (lento) a 5 (rápido), default 3
+  brightness: number;      // 10 a 100%, default 100
+}
+
+export interface ScoreboardLedLighting {
+  scoreLocal: LedComponentConfig;
+  scoreVisitor: LedComponentConfig;
+  period: LedComponentConfig;
+  timer: LedComponentConfig;
+  possession: LedComponentConfig;
+  banner: LedComponentConfig;
+  clock: LedComponentConfig;
+  border: LedComponentConfig;
+  activePreset?: string;
+}
+
+export interface LedPreset {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  lighting: ScoreboardLedLighting;
+}
+
