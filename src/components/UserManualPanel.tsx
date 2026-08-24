@@ -54,8 +54,80 @@ export const UserManualPanel: React.FC = () => {
   );
 
   const downloadMarkdownManual = () => {
-    const markdownContent = `# 📖 MANUAL DE USUARIO - TABLERO DEPORTIVO ESCOLAR ARDUINO / ESP32
-Consulte el archivo /MANUAL_DE_USUARIO.md para el documento completo.`;
+    const markdownContent = `# 📖 MANUAL DE USUARIO Y GUÍA DE OPERACIÓN
+## TABLERO DEPORTIVO Y CARTEL LUMINOSO DIGITAL ESCOLAR (ARDUINO / ESP32)
+*Versión 2.4 Oficial - Mesa de Control de Gimnasio*
+
+---
+
+### 1. INTRODUCCIÓN Y ARQUITECTURA
+El Sistema de Tablero Deportivo Escolar es una plataforma profesional para control de tanteador, tiempos de juego y señalización acústica-luminosa.
+- **Panel Web de Control (PC/Tablet)**: Interfaz reactiva para mesa de control, reloj en tiempo real, macros de teclado, sintetizador Web Audio polifónico y vista previa digital del cartel físico.
+- **Tablero Físico (Arduino / ESP32)**: Controlador por microcontrolador que gobierna displays 7 segmentos de alta luminosidad, matriz de texto, reloj RTC DS3231 con batería y relé de bocina de 220V/12V.
+
+---
+
+### 2. COMPONENTES Y PANTALLAS LUMINOSAS
+1. **Tanteadores de Puntos (0 a 99)**: Displays 7 segmentos de alto contraste (Rojo para Local, Verde/Azul para Visitante) controlados por MAX7219 o 74HC595.
+2. **Cronómetro Principal (MM:SS y SS.d)**: 4 dígitos para minutos y segundos. En el último minuto (< 01:00) pasa automáticamente a décimas de segundo.
+3. **Módulo Shot Clock de Posesión (24s / 14s)**: Displays dobles independientes con aviso lumínico a los 5 segundos.
+4. **Relé de Chicharra de Estadio (D8)**: Salida a relé optoacoplado de 10A para accionar sirenas industriales o bocinas electromecánicas de 12V DC o 220V AC.
+
+---
+
+### 3. ENLACE Y COMUNICACIÓN CON EL TABLERO
+- **Cable USB Serial (Recomendado para PC)**: Conectar cable USB, abrir diálogo "ENLACE", elegir 9600 Baud (Arduino) o 115200 Baud (ESP32) y seleccionar el puerto COM en Web Serial API.
+- **Bluetooth (HC-05 / ESP32 BLE)**: Inalámbrico para operar desde tablets o notebooks en la mesa de jueces hasta 15 metros de distancia.
+- **WiFi (ESP32)**: Transmisión mediante endpoints HTTP REST y WebSockets.
+
+---
+
+### 4. OPERACIÓN POR DISCIPLINA DEPORTIVA
+- **Básquetbol (FIBA)**: Puntuación +1, +2, +3 y -1. Reset automático de posesión a 24s en cada conversión. Alerta de bonus a la 5ª falta colectiva por cuarto. Tiempos muertos de 60 segundos.
+- **Fútbol y Futsal (AFA/FIFA)**: 2 tiempos de 45m (Fútbol) o 20m netos (Futsal). Registro de tarjetas amarillas y rojas. 6ta falta acumulada y doble penal.
+- **Vóleibol**: Tanteador de sets (mejor de 3 o 5), indicador de saque y control de rotaciones/sustituciones.
+- **Handball**: Registro de goles, exclusiones de 2 minutos y aviso de juego pasivo.
+- **Entrenamiento**: Campana de round de boxeo, gong de descanso y temporizador de series.
+
+---
+
+### 5. CRONÓMETRO Y SHOT CLOCK
+- **Iniciar / Pausar**: Barra Espaciadora o botón central.
+- **Ajustes Rápidos**: +1m, -1m, +10s, -10s para correcciones arbitrales sobre la marcha.
+- **Posesión 24s (Tecla 1)**: Jugada ofensiva completa.
+- **Posesión 14s (Tecla 2)**: Rebote ofensivo o falta en campo de ataque.
+
+---
+
+### 6. MACROS DE TECLADO PC
+| Función | Tecla | Acción |
+|---|---|---|
+| Play / Pausa | **Espacio** | Arranca / detiene cronómetro |
+| Local +1 / +2 / +3 | **Q / W / E** | Suma puntos local |
+| Local -1 | **A** | Descuenta 1 punto local |
+| Visitante +1 / +2 / +3 | **U / I / O** | Suma puntos visitante |
+| Visitante -1 | **J** | Descuenta 1 punto visitante |
+| Posesión 24s / 14s | **1 / 2** | Resetea reloj de tiro |
+| Bocina / Sirena | **B** | Disparo de chicharra |
+| Silbato Árbitro | **S** | Silbato acústico |
+
+---
+
+### 7. PROTOCOLO SERIE ASCII
+- \`L:<puntos>\` : Puntos Local (ej. \`L:42\`)
+- \`V:<puntos>\` : Puntos Visitante (ej. \`V:38\`)
+- \`T:<mm:ss>\` : Tiempo Cronómetro (ej. \`T:08:45\`)
+- \`P:<periodo>\` : Periodo (ej. \`P:3\`)
+- \`CMD:SHOT_CLOCK_RESET:24\` : Reset 24 segundos
+- \`CMD:HORN:<ms>\` : Accionar bocina por milisegundos
+- \`CMD:RTC_SYNC:<iso>\` : Sincronización horaria RTC DS3231
+
+---
+
+### 8. INSTALACIÓN WINDOWS 11 Y ANDROID
+- **Windows 11**: Instalar como PWA desde Chrome o Edge para acceso directo en Escritorio y ejecución en ventana nativa.
+- **Android**: Instalar en Pantalla Principal desde Chrome para soporte táctil y pantalla completa.
+`;
     const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
